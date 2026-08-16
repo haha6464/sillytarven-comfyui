@@ -80,17 +80,18 @@ function replacePlaceholders(value, values) {
 async function summarizeTurn(text) {
   const conf = settings();
   if (!conf.llmBaseUrl || !conf.llmApiKey || !conf.llmModel) throw new Error("请先填写 LLM Base URL、API Key 和模型名称。");
-  debug("开始请求 LLM 场景总结", { baseUrl: conf.llmBaseUrl, model: conf.llmModel, viaProxy: conf.llmUseProxy, messageLength: text.length });
+  debug("开始请求 LLM 场景总结", { baseUrl: conf.llmBaseUrl, model: conf.llmModel, viaProxy: conf.llmUseProxy, reasoningEnabled: false, messageLength: text.length });
   const prompt = conf.summaryPrompt.includes("{{message}}") ? conf.summaryPrompt.replaceAll("{{message}}", text) : conf.summaryPrompt + "\n\nAI 本轮回复：\n" + text;
+  const completion = { model: conf.llmModel, messages: [{ role: "user", content: prompt }], temperature: Number(conf.llmTemperature), stream: false, enable_thinking: false };
   let url, requestHeaders, body;
   if (conf.llmUseProxy) {
     url = "/api/backends/chat-completions/generate";
     requestHeaders = headers();
-    body = { chat_completion_source: "custom", custom_url: conf.llmBaseUrl.replace(/\/$/, ""), custom_include_headers: 'Authorization: "Bearer ' + conf.llmApiKey + '"', model: conf.llmModel, messages: [{ role: "user", content: prompt }], temperature: Number(conf.llmTemperature), stream: false };
+    body = { chat_completion_source: "custom", custom_url: conf.llmBaseUrl.replace(/\/$/, ""), custom_include_headers: 'Authorization: "Bearer ' + conf.llmApiKey + '"', ...completion };
   } else {
     url = conf.llmBaseUrl.replace(/\/$/, "") + "/chat/completions";
     requestHeaders = { "Content-Type": "application/json", "Authorization": "Bearer " + conf.llmApiKey };
-    body = { model: conf.llmModel, messages: [{ role: "user", content: prompt }], temperature: Number(conf.llmTemperature), stream: false };
+    body = completion;
   }
   const response = await fetch(url, { method: "POST", headers: requestHeaders, body: JSON.stringify(body) });
   debug("LLM 场景总结响应", { status: response.status, ok: response.ok });
@@ -222,7 +223,7 @@ const workflowSteps = [
   ["generating", "ComfyUI 生成"],
   ["completed", "完成"]
 ];
-function workflowWidget(state, position) {
+function workflowWidget(mesId, state, position) {
   const currentIndex = workflowSteps.findIndex(([key]) => key === state.step);
   const workflow = document.createElement("div");
   workflow.className = "scene-draw-workflow scene-draw-workflow--" + position + " scene-draw-workflow--" + state.step;
@@ -232,8 +233,16 @@ function workflowWidget(state, position) {
   const track = document.createElement("div");
   track.className = "scene-draw-workflow-track";
   workflowSteps.forEach(([key, text], index) => {
-    const item = document.createElement("div");
+    const canShowSummary = key === "summarizing" && Boolean(chat[Number(mesId)]?.extra?.sceneDrawPrompt);
+    const item = document.createElement(canShowSummary ? "button" : "div");
     item.className = "scene-draw-workflow-step";
+    if (canShowSummary) {
+      item.type = "button";
+      item.classList.add("scene-draw-workflow-summary");
+      item.dataset.sceneDrawMesid = String(mesId);
+      item.title = "查看 LLM 总结的场景提示词";
+      item.setAttribute("aria-label", "查看总结场景");
+    }
     if (state.step === "failed" && index === currentIndex) item.classList.add("failed");
     else if (index < currentIndex || state.step === "completed") item.classList.add("done");
     else if (index === currentIndex) item.classList.add("active");
@@ -257,8 +266,8 @@ function renderWorkflowState(mesId, state) {
   mes.querySelectorAll(".scene-draw-workflow").forEach((element) => element.remove());
   if (!state) return;
   const text = mes.querySelector(".mes_text");
-  const start = workflowWidget(state, "start");
-  const end = workflowWidget(state, "end");
+  const start = workflowWidget(mesId, state, "start");
+  const end = workflowWidget(mesId, state, "end");
   if (text) {
     text.before(start);
     const image = mes.querySelector(".scene-draw-result");
@@ -303,11 +312,11 @@ async function runForMessage(mesId, button) {
     button.title = "正在总结场景";
     setWorkflowState(mesId, message, "summarizing", "正在使用 LLM 总结本轮 AI 回复");
     const prompt = await summarizeTurn(text);
+    message.extra ||= {};
+    message.extra.sceneDrawPrompt = prompt;
     button.title = "正在生成图片";
     const image = await generateImage(prompt, (step, detail) => setWorkflowState(mesId, message, step, detail));
-    message.extra ||= {};
     message.extra.sceneDrawImage = image;
-    message.extra.sceneDrawPrompt = prompt;
     renderImage(mesId, image, prompt);
     setWorkflowState(mesId, message, "completed", "图片生成完成，可在下方查看");
     saveChatConditional();
@@ -341,12 +350,45 @@ function decorateMessage(mes) {
   if (message.extra?.sceneDrawState) renderWorkflowState(mesId, message.extra.sceneDrawState);
 }
 function decorateMessages() { document.querySelectorAll(".mes[mesid]").forEach(decorateMessage); }
+function showSummaryModal(mesId) {
+  const summary = chat[Number(mesId)]?.extra?.sceneDrawPrompt;
+  if (!summary) return;
+  document.querySelector(".scene-draw-summary-modal")?.remove();
+  const modal = document.createElement("div");
+  modal.className = "scene-draw-summary-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-label", "场景总结内容");
+  const panel = document.createElement("section");
+  panel.className = "scene-draw-summary-modal-panel";
+  const title = document.createElement("h3");
+  title.textContent = "LLM 场景总结";
+  const content = document.createElement("pre");
+  content.className = "scene-draw-summary-modal-content";
+  content.textContent = summary;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "menu_button scene-draw-summary-modal-close";
+  close.textContent = "关闭";
+  close.addEventListener("click", () => modal.remove());
+  panel.append(title, content, close);
+  modal.append(panel);
+  document.body.append(modal);
+  close.focus();
+}
 function bindGenerationClickHandler() {
   if (generationClickHandlerBound) return;
   generationClickHandlerBound = true;
   // Some character-card beautifiers clone or replace message nodes. Event
   // delegation keeps copied image buttons functional after that transformation.
   document.addEventListener("click", (event) => {
+    const summaryButton = event.target instanceof Element ? event.target.closest(".scene-draw-workflow-summary") : null;
+    if (summaryButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      showSummaryModal(summaryButton.dataset.sceneDrawMesid);
+      return;
+    }
     const target = event.target instanceof Element ? event.target.closest(".scene-draw-button") : null;
     const mes = target?.closest(".mes[mesid]");
     const mesId = mes?.getAttribute("mesid");
