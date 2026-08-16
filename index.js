@@ -3,6 +3,7 @@ import { chat, eventSource, event_types, getRequestHeaders, saveChatConditional,
 
 const extensionName = "st-chatu8";
 const clientId = "scene-draw-" + (crypto.randomUUID?.() || Math.random().toString(36).slice(2));
+const logPrefix = "[本轮生图]";
 
 // Supplied Krea workflow, already in ComfyUI API format.
 const defaultWorkflow = {
@@ -41,6 +42,9 @@ function notify(kind, message) {
   if (window.toastr?.[kind]) window.toastr[kind](message, "本轮生图");
   else console[kind === "error" ? "error" : "log"]("[本轮生图] " + message);
 }
+function debug(event, detail = {}) {
+  console.info(logPrefix + " " + event, detail);
+}
 function cleanText(value) {
   return String(value || "").replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<thinking>[\s\S]*?<\/thinking>/gi, "").replace(/<\/??image[^>]*>/gi, "").trim();
 }
@@ -75,6 +79,7 @@ function replacePlaceholders(value, values) {
 async function summarizeTurn(text) {
   const conf = settings();
   if (!conf.llmBaseUrl || !conf.llmApiKey || !conf.llmModel) throw new Error("请先填写 LLM Base URL、API Key 和模型名称。");
+  debug("开始请求 LLM 场景总结", { baseUrl: conf.llmBaseUrl, model: conf.llmModel, viaProxy: conf.llmUseProxy, messageLength: text.length });
   const prompt = conf.summaryPrompt.includes("{{message}}") ? conf.summaryPrompt.replaceAll("{{message}}", text) : conf.summaryPrompt + "\n\nAI 本轮回复：\n" + text;
   let url, requestHeaders, body;
   if (conf.llmUseProxy) {
@@ -87,10 +92,12 @@ async function summarizeTurn(text) {
     body = { model: conf.llmModel, messages: [{ role: "user", content: prompt }], temperature: Number(conf.llmTemperature), stream: false };
   }
   const response = await fetch(url, { method: "POST", headers: requestHeaders, body: JSON.stringify(body) });
+  debug("LLM 场景总结响应", { status: response.status, ok: response.ok });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.error) throw new Error(data.error?.message || data.message || "LLM 请求失败（" + response.status + "）");
   const result = cleanText(data.choices?.[0]?.message?.content);
   if (!result) throw new Error("LLM 没有返回可用的场景提示词。");
+  debug("LLM 场景总结完成", { promptLength: result.length });
   return result;
 }
 
@@ -165,9 +172,11 @@ function blobToDataUrl(blob) {
 
 async function generateDirect(workflow, onProgress) {
   const base = settings().comfyUrl.replace(/\/$/, "");
+  debug("直连提交 ComfyUI 工作流", { url: base, nodeCount: Object.keys(workflow).length });
   const response = await fetch(base + "/prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_id: clientId, prompt: workflow }) });
   const queued = await response.json().catch(() => ({}));
   if (!response.ok || !queued.prompt_id) throw new Error(queued.error?.message || "ComfyUI 提交失败（" + response.status + "）");
+  debug("ComfyUI 已接收工作流", { promptId: queued.prompt_id });
   onProgress?.("generating", "ComfyUI 已接收任务，正在生成图片");
   const deadline = Date.now() + 600000;
   while (Date.now() < deadline) {
@@ -178,6 +187,7 @@ async function generateDirect(workflow, onProgress) {
     if (record.status?.status_str === "error") throw new Error(record.status?.exception_message || "ComfyUI 工作流执行失败。");
     const file = outputImage(record);
     if (!file) continue;
+    debug("ComfyUI 生成完成，正在下载图片", { filename: file.filename, subfolder: file.subfolder || "" });
     const params = new URLSearchParams({ filename: file.filename, subfolder: file.subfolder || "", type: file.type || "output" });
     const imageResponse = await fetch(base + "/view?" + params);
     if (!imageResponse.ok) throw new Error("ComfyUI 已完成，但无法下载图片。");
@@ -187,7 +197,9 @@ async function generateDirect(workflow, onProgress) {
 }
 async function generateProxy(workflow, onProgress) {
   onProgress?.("generating", "任务已交给酒馆代理，正在等待 ComfyUI 完成");
+  debug("通过酒馆代理提交 ComfyUI 工作流", { url: settings().comfyUrl, nodeCount: Object.keys(workflow).length });
   const response = await fetch("/api/sd/comfy/generate", { method: "POST", headers: headers(), body: JSON.stringify({ url: settings().comfyUrl, prompt: JSON.stringify({ client_id: clientId, prompt: workflow }) }) });
+  debug("酒馆代理 ComfyUI 响应", { status: response.status, ok: response.ok });
   const raw = await response.text();
   if (!response.ok) throw new Error(raw || "ComfyUI 代理请求失败（" + response.status + "）");
   let data;
@@ -197,6 +209,7 @@ async function generateProxy(workflow, onProgress) {
 }
 async function generateImage(prompt, onProgress) {
   if (!settings().comfyUrl) throw new Error("请先填写 ComfyUI 地址。");
+  debug("开始 ComfyUI 生图", { viaProxy: settings().useComfyProxy, promptLength: prompt.length });
   onProgress?.("submitting", "正在整理工作流并提交给 ComfyUI");
   const workflow = workflowWithPrompt(prompt);
   return settings().useComfyProxy ? generateProxy(workflow, onProgress) : generateDirect(workflow, onProgress);
@@ -257,6 +270,7 @@ function renderWorkflowState(mesId, state) {
 function setWorkflowState(mesId, message, step, detail) {
   message.extra ||= {};
   message.extra.sceneDrawState = { step, detail };
+  debug("状态更新", { mesId: Number(mesId), step, detail });
   renderWorkflowState(mesId, message.extra.sceneDrawState);
 }
 function renderImage(mesId, imageUrl, prompt) {
@@ -284,6 +298,7 @@ async function runForMessage(mesId, button) {
     if (!message || message.is_user || message.is_system) throw new Error("请在一条 AI 回复上点击生成图片。");
     const text = cleanText(message.mes);
     if (!text) throw new Error("这条 AI 回复没有可用于总结的文本。");
+    debug("点击生成图片", { mesId: Number(mesId), messageLength: text.length });
     button.title = "正在总结场景";
     setWorkflowState(mesId, message, "summarizing", "正在使用 LLM 总结本轮 AI 回复");
     const prompt = await summarizeTurn(text);
@@ -297,7 +312,7 @@ async function runForMessage(mesId, button) {
     saveChatConditional();
     notify("success", "图片已生成。");
   } catch (error) {
-    console.error("[本轮生图]", error);
+    console.error(logPrefix + " 生成图片失败", error);
     const message = chat[Number(mesId)];
     if (message) {
       setWorkflowState(mesId, message, "failed", error.message || String(error));
@@ -321,6 +336,7 @@ function decorateMessage(mes) {
   button.innerHTML = '<i class="fa-solid fa-image"></i>';
   button.addEventListener("click", () => runForMessage(mesId, button));
   (mes.querySelector(".mes_buttons") || mes).append(button);
+  debug("已添加生成图片按钮", { mesId: Number(mesId) });
   if (message.extra?.sceneDrawImage) renderImage(mesId, message.extra.sceneDrawImage, message.extra.sceneDrawPrompt || "");
   if (message.extra?.sceneDrawState) renderWorkflowState(mesId, message.extra.sceneDrawState);
 }
@@ -453,7 +469,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); addSettings(); decorateMessages();
+  settings(); debug("插件初始化", { version: "3.0.3" }); addSettings(); decorateMessages();
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => setTimeout(decorateMessages));
 }
