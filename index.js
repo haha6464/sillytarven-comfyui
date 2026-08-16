@@ -4,6 +4,7 @@ import { chat, eventSource, event_types, getRequestHeaders, saveChatConditional,
 const extensionName = "st-chatu8";
 const clientId = "scene-draw-" + (crypto.randomUUID?.() || Math.random().toString(36).slice(2));
 const logPrefix = "[本轮生图]";
+let generationClickHandlerBound = false;
 
 // Supplied Krea workflow, already in ComfyUI API format.
 const defaultWorkflow = {
@@ -334,13 +335,28 @@ function decorateMessage(mes) {
   button.type = "button"; button.className = "mes_button scene-draw-button"; button.title = "总结此条 AI 回复并生成图片";
   button.setAttribute("aria-label", "生成图片");
   button.innerHTML = '<i class="fa-solid fa-image"></i>';
-  button.addEventListener("click", () => runForMessage(mesId, button));
   (mes.querySelector(".mes_buttons") || mes).append(button);
   debug("已添加生成图片按钮", { mesId: Number(mesId) });
   if (message.extra?.sceneDrawImage) renderImage(mesId, message.extra.sceneDrawImage, message.extra.sceneDrawPrompt || "");
   if (message.extra?.sceneDrawState) renderWorkflowState(mesId, message.extra.sceneDrawState);
 }
 function decorateMessages() { document.querySelectorAll(".mes[mesid]").forEach(decorateMessage); }
+function bindGenerationClickHandler() {
+  if (generationClickHandlerBound) return;
+  generationClickHandlerBound = true;
+  // Some character-card beautifiers clone or replace message nodes. Event
+  // delegation keeps copied image buttons functional after that transformation.
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target.closest(".scene-draw-button") : null;
+    const mes = target?.closest(".mes[mesid]");
+    const mesId = mes?.getAttribute("mesid");
+    if (!target || mesId === null || mesId === undefined) return;
+    event.preventDefault();
+    event.stopPropagation();
+    runForMessage(mesId, target);
+  }, true);
+  debug("已启用委托点击监听", { reason: "兼容消息美化脚本" });
+}
 
 function settingField(label, input) {
   const row = document.createElement("label");
@@ -469,7 +485,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); debug("插件初始化", { version: "3.0.3" }); addSettings(); decorateMessages();
+  settings(); debug("插件初始化", { version: "3.0.4" }); bindGenerationClickHandler(); addSettings(); decorateMessages();
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => setTimeout(decorateMessages));
 }
