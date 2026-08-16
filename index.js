@@ -7,16 +7,16 @@ const clientId = "scene-draw-" + (crypto.randomUUID?.() || Math.random().toStrin
 // Supplied Krea workflow, already in ComfyUI API format.
 const defaultWorkflow = {
   "3": { "inputs": { "text": "<lora:LiRuinan_v2:1.00>, <lora:SNOFS_krea_v1_2:1.00>, <lora:penis_size_krea2_v2_loraholic:-4.00:-4.00>, <lora:breast_size_v2_krea2_loraholic:-1.00>", "loras": { "__value__": [{ "name": "LiRuinan_v2", "strength": "1.00", "active": true, "expanded": false, "clipStrength": "1.00", "selected": false, "locked": false }, { "name": "breast_size_v2_krea2_loraholic", "strength": "-1.00", "active": true, "expanded": false, "clipStrength": "-1.00", "selected": false, "locked": false }, { "name": "penis_size_krea2_v2_loraholic", "strength": "-3.00", "active": true, "expanded": false, "clipStrength": "-3.00", "selected": false, "locked": false }, { "name": "SNOFS_krea_v1_2", "strength": 1, "active": true, "expanded": false, "clipStrength": 1, "selected": false, "locked": false }] }, "model": ["10", 0], "clip": ["6", 0] }, "class_type": "Lora Loader (LoraManager)" },
-  "5": { "inputs": { "text": "", "clip": ["3", 1] }, "class_type": "CLIPTextEncode" },
-  "6": { "inputs": { "clip_name": "qwen3VLInstruct4bHeretic_int8Convrot.safetensors", "type": "krea2", "device": "default" }, "class_type": "CLIPLoader" },
-  "7": { "inputs": { "vae_name": "qwen_image_vae.safetensors" }, "class_type": "VAELoader" },
-  "8": { "inputs": { "text": "马赛克, mosaic, censored, 模糊，低分辨率，低质量图像，扭曲的肢体，诡异的外观，丑陋，噪点，网格感，JPEG压缩条纹，异常的肢体，水印，乱码，意义不明的字符", "clip": ["3", 1] }, "class_type": "CLIPTextEncode" },
-  "9": { "inputs": { "seed": 31982231011750 }, "class_type": "Seed (rgthree)" },
-  "10": { "inputs": { "unet_name": "krea2_turbo_fp8_scaled.safetensors", "weight_dtype": "default" }, "class_type": "UNETLoader" },
+  "5": { "inputs": { "text": "{{prompt}}", "clip": ["3", 1] }, "class_type": "CLIPTextEncode" },
+  "6": { "inputs": { "clip_name": "{{clipName}}", "type": "krea2", "device": "default" }, "class_type": "CLIPLoader" },
+  "7": { "inputs": { "vae_name": "{{vaeName}}" }, "class_type": "VAELoader" },
+  "8": { "inputs": { "text": "{{negativePrompt}}", "clip": ["3", 1] }, "class_type": "CLIPTextEncode" },
+  "9": { "inputs": { "seed": "{{seed}}" }, "class_type": "Seed (rgthree)" },
+  "10": { "inputs": { "unet_name": "{{modelName}}", "weight_dtype": "default" }, "class_type": "UNETLoader" },
   "11": { "inputs": { "conditioning": ["5", 0] }, "class_type": "ConditioningZeroOut" },
   "12": { "inputs": { "samples": ["14", 0], "vae": ["7", 0] }, "class_type": "VAEDecode" },
-  "13": { "inputs": { "width": 1024, "height": 1024, "batch_size": 1 }, "class_type": "EmptyLatentImage" },
-  "14": { "inputs": { "seed": ["9", 0], "steps": 8, "cfg": 1, "sampler_name": "er_sde", "scheduler": "simple", "denoise": 1, "model": ["3", 0], "positive": ["5", 0], "negative": ["11", 0], "latent_image": ["13", 0] }, "class_type": "KSampler" },
+  "13": { "inputs": { "width": "{{width}}", "height": "{{height}}", "batch_size": "{{batchSize}}" }, "class_type": "EmptyLatentImage" },
+  "14": { "inputs": { "seed": ["9", 0], "steps": "{{steps}}", "cfg": "{{cfg}}", "sampler_name": "{{samplerName}}", "scheduler": "{{scheduler}}", "denoise": "{{denoise}}", "model": ["3", 0], "positive": ["5", 0], "negative": ["11", 0], "latent_image": ["13", 0] }, "class_type": "KSampler" },
   "15": { "inputs": { "filename_prefix": "Krea2", "images": ["12", 0] }, "class_type": "SaveImage" }
 };
 
@@ -24,6 +24,9 @@ const defaults = {
   enabled: true, comfyUrl: "http://127.0.0.1:8188", useComfyProxy: true,
   workflow: JSON.stringify(defaultWorkflow, null, 2), positiveNodeId: "5", positiveInputName: "text",
   llmBaseUrl: "", llmApiKey: "", llmModel: "", llmUseProxy: true, llmTemperature: 0.3,
+  modelName: "krea2_turbo_fp8_scaled.safetensors", clipName: "qwen3VLInstruct4bHeretic_int8Convrot.safetensors", vaeName: "qwen_image_vae.safetensors",
+  negativePrompt: "马赛克, mosaic, censored, 模糊，低分辨率，低质量图像，扭曲的肢体，诡异的外观，丑陋，噪点，网格感，JPEG压缩条纹，异常的肢体，水印，乱码，意义不明的字符",
+  width: 1024, height: 1024, batchSize: 1, seed: 31982231011750, steps: 8, cfg: 1, samplerName: "er_sde", scheduler: "simple", denoise: 1,
   summaryPrompt: "你是绘图提示词整理助手。只根据下面这一条 AI 回复提炼画面场景，保留人物、动作、服饰、环境、镜头和光线；输出适合 ComfyUI 的简洁正向提示词。不要解释、不要加引号、不要虚构未出现的细节。\n\nAI 本轮回复：\n{{message}}"
 };
 
@@ -40,6 +43,33 @@ function notify(kind, message) {
 }
 function cleanText(value) {
   return String(value || "").replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<thinking>[\s\S]*?<\/thinking>/gi, "").replace(/<\/??image[^>]*>/gi, "").trim();
+}
+function workflowVariables(prompt) {
+  const conf = settings();
+  return {
+    prompt,
+    modelName: conf.modelName,
+    clipName: conf.clipName,
+    vaeName: conf.vaeName,
+    negativePrompt: conf.negativePrompt,
+    width: conf.width,
+    height: conf.height,
+    batchSize: conf.batchSize,
+    seed: conf.seed,
+    steps: conf.steps,
+    cfg: conf.cfg,
+    samplerName: conf.samplerName,
+    scheduler: conf.scheduler,
+    denoise: conf.denoise
+  };
+}
+function replacePlaceholders(value, values) {
+  if (Array.isArray(value)) return value.map((item) => replacePlaceholders(item, values));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replacePlaceholders(item, values)]));
+  if (typeof value !== "string") return value;
+  const exact = value.match(/^\{\{([a-zA-Z0-9_]+)\}\}$/);
+  if (exact && exact[1] in values) return values[exact[1]];
+  return value.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (match, key) => key in values ? String(values[key]) : match);
 }
 
 async function summarizeTurn(text) {
@@ -64,6 +94,50 @@ async function summarizeTurn(text) {
   return result;
 }
 
+async function fetchLlmModels() {
+  const conf = settings();
+  if (!conf.llmBaseUrl || !conf.llmApiKey) throw new Error("请先填写 LLM Base URL 和 API Key。");
+  let response;
+  if (conf.llmUseProxy) {
+    response = await fetch("/api/backends/chat-completions/status", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        chat_completion_source: "custom",
+        custom_url: conf.llmBaseUrl.replace(/\/$/, ""),
+        custom_include_headers: 'Authorization: "Bearer ' + conf.llmApiKey + '"'
+      })
+    });
+  } else {
+    response = await fetch(conf.llmBaseUrl.replace(/\/$/, "") + "/models", {
+      headers: { "Authorization": "Bearer " + conf.llmApiKey }
+    });
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error) throw new Error(data.error?.message || data.message || "LLM 连接失败（" + response.status + "）");
+  const models = (data.data || data.models || []).map((model) => typeof model === "string" ? model : model.id).filter(Boolean).sort();
+  if (!models.length) throw new Error("连接成功，但接口没有返回模型列表。");
+  return models;
+}
+
+async function testComfyConnection() {
+  const conf = settings();
+  if (!conf.comfyUrl) throw new Error("请先填写 ComfyUI 地址。");
+  let response;
+  if (conf.useComfyProxy) {
+    response = await fetch("/api/sd/comfy/models", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ url: conf.comfyUrl.replace(/\/$/, "") })
+    });
+  } else {
+    response = await fetch(conf.comfyUrl.replace(/\/$/, "") + "/object_info");
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error) throw new Error(data.error?.message || data.message || "ComfyUI 连接失败（" + response.status + "）");
+  return data;
+}
+
 function workflowWithPrompt(prompt) {
   const conf = settings();
   let workflow;
@@ -71,7 +145,7 @@ function workflowWithPrompt(prompt) {
   const node = workflow[conf.positiveNodeId];
   if (!node?.inputs || !(conf.positiveInputName in node.inputs)) throw new Error("找不到正向提示词位置：节点 " + conf.positiveNodeId + " 的 " + conf.positiveInputName + "。");
   node.inputs[conf.positiveInputName] = prompt;
-  return workflow;
+  return replacePlaceholders(workflow, workflowVariables(prompt));
 }
 function outputImage(record) {
   for (const output of Object.values(record.outputs || {})) {
@@ -195,6 +269,36 @@ function inputFor(key, type = "text") {
   input.addEventListener("input", () => { settings()[key] = type === "number" ? Number(input.value) : input.value; save(); });
   return input;
 }
+function actionField(label, input, button) {
+  const group = document.createElement("div");
+  group.className = "scene-draw-input-action";
+  group.append(input, button);
+  return settingField(label, group);
+}
+function statusLine() {
+  const line = document.createElement("div");
+  line.className = "scene-draw-connection-status";
+  line.textContent = "尚未测试";
+  return line;
+}
+function setStatus(line, success, message) {
+  line.classList.toggle("success", success);
+  line.classList.toggle("error", !success);
+  line.textContent = message;
+}
+function modelSelect() {
+  const select = document.createElement("select");
+  const saved = settings().llmModel;
+  select.add(new Option(saved || "请先测试连接并获取模型", saved || ""));
+  select.addEventListener("change", () => { settings().llmModel = select.value; save(); });
+  return select;
+}
+function addHeading(text) {
+  const heading = document.createElement("h4");
+  heading.className = "scene-draw-heading";
+  heading.textContent = text;
+  return heading;
+}
 function addSettings() {
   if (document.querySelector("#scene-draw-settings")) return;
   const panel = document.createElement("details");
@@ -202,13 +306,67 @@ function addSettings() {
   panel.innerHTML = '<summary><i class="fa-solid fa-image"></i> 本轮生图设置</summary><p>点击每条 AI 回复上的“生成图片”后，只会将该条回复交给 LLM 总结并生成。</p>';
   const content = document.createElement("div");
   content.className = "scene-draw-settings-content";
-  content.append(settingField("ComfyUI 地址", inputFor("comfyUrl")), settingField("LLM Base URL（含 /v1）", inputFor("llmBaseUrl")), settingField("LLM API Key", inputFor("llmApiKey", "password")), settingField("LLM 模型", inputFor("llmModel")), settingField("Temperature", inputFor("llmTemperature", "number")), settingField("正向提示词节点 ID", inputFor("positiveNodeId")), settingField("正向提示词字段", inputFor("positiveInputName")));
+  content.append(addHeading("LLM 连接"));
+  const llmUrl = inputFor("llmBaseUrl");
+  const llmTest = document.createElement("button");
+  llmTest.type = "button"; llmTest.className = "menu_button"; llmTest.textContent = "测试并获取模型";
+  const llmStatus = statusLine();
+  const models = modelSelect();
+  llmTest.addEventListener("click", async () => {
+    llmTest.disabled = true; setStatus(llmStatus, true, "正在连接 LLM 并获取模型列表…");
+    try {
+      const list = await fetchLlmModels();
+      const selected = settings().llmModel;
+      models.replaceChildren(...list.map((name) => new Option(name, name, name === selected, name === selected)));
+      settings().llmModel = models.value || list[0];
+      save();
+      setStatus(llmStatus, true, "LLM 连接成功，已获取 " + list.length + " 个模型。");
+      notify("success", "LLM 连接成功，已加载模型列表。");
+    } catch (error) {
+      setStatus(llmStatus, false, "LLM 连接失败：" + error.message);
+      notify("error", "LLM 连接失败：" + error.message);
+    } finally { llmTest.disabled = false; }
+  });
+  content.append(actionField("LLM Base URL（含 /v1）", llmUrl, llmTest), settingField("LLM API Key", inputFor("llmApiKey", "password")), settingField("LLM 模型", models), llmStatus, settingField("Temperature", inputFor("llmTemperature", "number")));
+  content.append(addHeading("ComfyUI 连接"));
+  const comfyUrl = inputFor("comfyUrl");
+  const comfyTest = document.createElement("button");
+  comfyTest.type = "button"; comfyTest.className = "menu_button"; comfyTest.textContent = "测试连接";
+  const comfyStatus = statusLine();
+  comfyTest.addEventListener("click", async () => {
+    comfyTest.disabled = true; setStatus(comfyStatus, true, "正在连接 ComfyUI…");
+    try {
+      await testComfyConnection();
+      setStatus(comfyStatus, true, "ComfyUI 连接成功。");
+      notify("success", "ComfyUI 连接成功。");
+    } catch (error) {
+      setStatus(comfyStatus, false, "ComfyUI 连接失败：" + error.message);
+      notify("error", "ComfyUI 连接失败：" + error.message);
+    } finally { comfyTest.disabled = false; }
+  });
+  content.append(actionField("ComfyUI 地址", comfyUrl, comfyTest), comfyStatus);
   [["useComfyProxy", "通过酒馆代理连接 ComfyUI"], ["llmUseProxy", "通过酒馆代理调用 LLM"]].forEach(([key, label]) => {
     const input = document.createElement("input");
     input.type = "checkbox"; input.checked = settings()[key];
     input.addEventListener("change", () => { settings()[key] = input.checked; save(); });
     content.append(settingField(label, input));
   });
+  content.append(addHeading("工作流常用参数"));
+  content.append(
+    settingField("UNet / 模型文件（{{modelName}}）", inputFor("modelName")),
+    settingField("CLIP 文件（{{clipName}}）", inputFor("clipName")),
+    settingField("VAE 文件（{{vaeName}}）", inputFor("vaeName")),
+    settingField("负面提示词（{{negativePrompt}}）", inputFor("negativePrompt")),
+    settingField("宽度（{{width}}）", inputFor("width", "number")),
+    settingField("高度（{{height}}）", inputFor("height", "number")),
+    settingField("批次数（{{batchSize}}）", inputFor("batchSize", "number")),
+    settingField("种子（{{seed}}）", inputFor("seed", "number")),
+    settingField("步数（{{steps}}）", inputFor("steps", "number")),
+    settingField("CFG（{{cfg}}）", inputFor("cfg", "number")),
+    settingField("采样器（{{samplerName}}）", inputFor("samplerName")),
+    settingField("调度器（{{scheduler}}）", inputFor("scheduler")),
+    settingField("降噪（{{denoise}}）", inputFor("denoise", "number"))
+  );
   const prompt = document.createElement("textarea");
   prompt.rows = 8; prompt.value = settings().summaryPrompt; prompt.placeholder = "使用 {{message}} 代表当前 AI 回复";
   prompt.addEventListener("input", () => { settings().summaryPrompt = prompt.value; save(); });
@@ -216,7 +374,7 @@ function addSettings() {
   const workflow = document.createElement("textarea");
   workflow.rows = 14; workflow.value = settings().workflow; workflow.spellcheck = false;
   workflow.addEventListener("change", () => { settings().workflow = workflow.value; save(); });
-  content.append(settingField("ComfyUI API 工作流 JSON", workflow));
+  content.append(settingField("ComfyUI API 工作流 JSON（可使用 {{prompt}}、{{negativePrompt}} 及上方参数占位符）", workflow));
   const test = document.createElement("button");
   test.type = "button"; test.className = "menu_button"; test.textContent = "验证工作流正向节点";
   test.addEventListener("click", () => { try { workflowWithPrompt("scene draw connection test"); notify("success", "工作流 JSON 和正向提示词节点有效。"); } catch (error) { notify("error", error.message); } });

@@ -2,8 +2,16 @@
 #scene-draw-settings > summary { cursor: pointer; font-weight: 600; }
 .scene-draw-settings-content { display: grid; gap: 10px; margin-top: 12px; }
 .scene-draw-field { display: grid; gap: 5px; }
-.scene-draw-field input, .scene-draw-field textarea { width: 100%; box-sizing: border-box; }
+.scene-draw-field input, .scene-draw-field select, .scene-draw-field textarea { width: 100%; box-sizing: border-box; color: #111 !important; background-color: #fff; }
+.scene-draw-field input::placeholder, .scene-draw-field textarea::placeholder { color: #666; opacity: 1; }
 .scene-draw-field textarea { resize: vertical; font-family: var(--mainFontFamily, monospace); }
+.scene-draw-input-action { display: flex; gap: 8px; }
+.scene-draw-input-action input { flex: 1; }
+.scene-draw-input-action button { white-space: nowrap; }
+.scene-draw-connection-status { font-size: .9em; padding: 5px 8px; border-radius: 4px; background: rgba(128, 128, 128, .15); }
+.scene-draw-connection-status.success { color: #167a33; background: rgba(53, 167, 88, .15); }
+.scene-draw-connection-status.error { color: #a72323; background: rgba(210, 57, 57, .15); }
+.scene-draw-heading { margin: 14px 0 0; }
 .scene-draw-button { display: inline-flex; align-items: center; gap: 5px; }
 .scene-draw-button:disabled { opacity: .6; cursor: wait; }
 .scene-draw-result { margin: 10px 0; }
