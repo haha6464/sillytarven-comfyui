@@ -1,6 +1,5 @@
 import { extension_settings } from "../../../extensions.js";
-import { getContext } from "../../../st-context.js";
-import { chat, eventSource, event_types, saveChatConditional, saveSettingsDebounced } from "../../../../script.js";
+import { chat, eventSource, event_types, getRequestHeaders, saveChatConditional, saveSettingsDebounced } from "../../../../script.js";
 
 const extensionName = "st-chatu8";
 const clientId = "scene-draw-" + (crypto.randomUUID?.() || Math.random().toString(36).slice(2));
@@ -37,15 +36,7 @@ function settings() {
   return extension_settings[extensionName];
 }
 function save() { saveSettingsDebounced(); }
-function headers() {
-  const contextHeaders = getContext()?.getRequestHeaders?.() || {};
-  const token = contextHeaders["X-CSRF-TOKEN"] || contextHeaders["X-CSRF-Token"] || window.token;
-  return {
-    ...contextHeaders,
-    "Content-Type": "application/json",
-    ...(token ? { "X-CSRF-Token": token } : {})
-  };
-}
+function headers() { return getRequestHeaders(); }
 function notify(kind, message) {
   if (window.toastr?.[kind]) window.toastr[kind](message, "本轮生图");
   else console[kind === "error" ? "error" : "log"]("[本轮生图] " + message);
@@ -172,11 +163,12 @@ function blobToDataUrl(blob) {
   });
 }
 
-async function generateDirect(workflow) {
+async function generateDirect(workflow, onProgress) {
   const base = settings().comfyUrl.replace(/\/$/, "");
   const response = await fetch(base + "/prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_id: clientId, prompt: workflow }) });
   const queued = await response.json().catch(() => ({}));
   if (!response.ok || !queued.prompt_id) throw new Error(queued.error?.message || "ComfyUI 提交失败（" + response.status + "）");
+  onProgress?.("generating", "ComfyUI 已接收任务，正在生成图片");
   const deadline = Date.now() + 600000;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -193,7 +185,8 @@ async function generateDirect(workflow) {
   }
   throw new Error("等待 ComfyUI 图片超时（10 分钟）。");
 }
-async function generateProxy(workflow) {
+async function generateProxy(workflow, onProgress) {
+  onProgress?.("generating", "任务已交给酒馆代理，正在等待 ComfyUI 完成");
   const response = await fetch("/api/sd/comfy/generate", { method: "POST", headers: headers(), body: JSON.stringify({ url: settings().comfyUrl, prompt: JSON.stringify({ client_id: clientId, prompt: workflow }) }) });
   const raw = await response.text();
   if (!response.ok) throw new Error(raw || "ComfyUI 代理请求失败（" + response.status + "）");
@@ -202,12 +195,70 @@ async function generateProxy(workflow) {
   if (!data.data) throw new Error(data.error?.message || "酒馆代理没有返回图片数据。");
   return "data:image/" + (data.format || "png") + ";base64," + data.data;
 }
-async function generateImage(prompt) {
+async function generateImage(prompt, onProgress) {
   if (!settings().comfyUrl) throw new Error("请先填写 ComfyUI 地址。");
+  onProgress?.("submitting", "正在整理工作流并提交给 ComfyUI");
   const workflow = workflowWithPrompt(prompt);
-  return settings().useComfyProxy ? generateProxy(workflow) : generateDirect(workflow);
+  return settings().useComfyProxy ? generateProxy(workflow, onProgress) : generateDirect(workflow, onProgress);
 }
 
+const workflowSteps = [
+  ["summarizing", "总结场景"],
+  ["submitting", "提交工作流"],
+  ["generating", "ComfyUI 生成"],
+  ["completed", "完成"]
+];
+function workflowWidget(state, position) {
+  const currentIndex = workflowSteps.findIndex(([key]) => key === state.step);
+  const workflow = document.createElement("div");
+  workflow.className = "scene-draw-workflow scene-draw-workflow--" + position + " scene-draw-workflow--" + state.step;
+  const title = document.createElement("div");
+  title.className = "scene-draw-workflow-title";
+  title.textContent = state.step === "failed" ? "图片生成失败" : "图片生成状态";
+  const track = document.createElement("div");
+  track.className = "scene-draw-workflow-track";
+  workflowSteps.forEach(([key, text], index) => {
+    const item = document.createElement("div");
+    item.className = "scene-draw-workflow-step";
+    if (state.step === "failed" && index === currentIndex) item.classList.add("failed");
+    else if (index < currentIndex || state.step === "completed") item.classList.add("done");
+    else if (index === currentIndex) item.classList.add("active");
+    const marker = document.createElement("span");
+    marker.className = "scene-draw-workflow-marker";
+    marker.textContent = item.classList.contains("done") ? "✓" : String(index + 1);
+    const label = document.createElement("span");
+    label.textContent = text;
+    item.append(marker, label);
+    track.append(item);
+  });
+  const detail = document.createElement("div");
+  detail.className = "scene-draw-workflow-detail";
+  detail.textContent = state.detail || "";
+  workflow.append(title, track, detail);
+  return workflow;
+}
+function renderWorkflowState(mesId, state) {
+  const mes = document.querySelector('.mes[mesid="' + CSS.escape(String(mesId)) + '"]');
+  if (!mes) return;
+  mes.querySelectorAll(".scene-draw-workflow").forEach((element) => element.remove());
+  if (!state) return;
+  const text = mes.querySelector(".mes_text");
+  const start = workflowWidget(state, "start");
+  const end = workflowWidget(state, "end");
+  if (text) {
+    text.before(start);
+    const image = mes.querySelector(".scene-draw-result");
+    if (image) image.after(end); else text.after(end);
+  } else {
+    mes.prepend(start);
+    mes.append(end);
+  }
+}
+function setWorkflowState(mesId, message, step, detail) {
+  message.extra ||= {};
+  message.extra.sceneDrawState = { step, detail };
+  renderWorkflowState(mesId, message.extra.sceneDrawState);
+}
 function renderImage(mesId, imageUrl, prompt) {
   const mes = document.querySelector('.mes[mesid="' + CSS.escape(String(mesId)) + '"]');
   if (!mes) return;
@@ -225,28 +276,37 @@ function renderImage(mesId, imageUrl, prompt) {
 }
 async function runForMessage(mesId, button) {
   if (!settings().enabled || button.disabled) return;
-  const label = button.querySelector("span");
+  const icon = button.querySelector("i");
   button.disabled = true;
+  icon.className = "fa-solid fa-spinner fa-spin";
   try {
     const message = chat[Number(mesId)];
     if (!message || message.is_user || message.is_system) throw new Error("请在一条 AI 回复上点击生成图片。");
     const text = cleanText(message.mes);
     if (!text) throw new Error("这条 AI 回复没有可用于总结的文本。");
-    label.textContent = "总结场景…";
+    button.title = "正在总结场景";
+    setWorkflowState(mesId, message, "summarizing", "正在使用 LLM 总结本轮 AI 回复");
     const prompt = await summarizeTurn(text);
-    label.textContent = "ComfyUI 生图…";
-    const image = await generateImage(prompt);
+    button.title = "正在生成图片";
+    const image = await generateImage(prompt, (step, detail) => setWorkflowState(mesId, message, step, detail));
     message.extra ||= {};
     message.extra.sceneDrawImage = image;
     message.extra.sceneDrawPrompt = prompt;
-    saveChatConditional();
     renderImage(mesId, image, prompt);
+    setWorkflowState(mesId, message, "completed", "图片生成完成，可在下方查看");
+    saveChatConditional();
     notify("success", "图片已生成。");
   } catch (error) {
     console.error("[本轮生图]", error);
+    const message = chat[Number(mesId)];
+    if (message) {
+      setWorkflowState(mesId, message, "failed", error.message || String(error));
+      saveChatConditional();
+    }
     notify("error", error.message || String(error));
   } finally {
-    label.textContent = "生成图片";
+    button.title = "总结此条 AI 回复并生成图片";
+    icon.className = "fa-solid fa-image";
     button.disabled = false;
   }
 }
@@ -256,11 +316,13 @@ function decorateMessage(mes) {
   const message = chat[Number(mesId)];
   if (!message || message.is_user || message.is_system) return;
   const button = document.createElement("button");
-  button.type = "button"; button.className = "menu_button scene-draw-button"; button.title = "总结此条 AI 回复并生成图片";
-  button.innerHTML = '<i class="fa-solid fa-image"></i><span>生成图片</span>';
+  button.type = "button"; button.className = "mes_button scene-draw-button"; button.title = "总结此条 AI 回复并生成图片";
+  button.setAttribute("aria-label", "生成图片");
+  button.innerHTML = '<i class="fa-solid fa-image"></i>';
   button.addEventListener("click", () => runForMessage(mesId, button));
   (mes.querySelector(".mes_buttons") || mes).append(button);
   if (message.extra?.sceneDrawImage) renderImage(mesId, message.extra.sceneDrawImage, message.extra.sceneDrawPrompt || "");
+  if (message.extra?.sceneDrawState) renderWorkflowState(mesId, message.extra.sceneDrawState);
 }
 function decorateMessages() { document.querySelectorAll(".mes[mesid]").forEach(decorateMessage); }
 

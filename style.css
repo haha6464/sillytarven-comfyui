@@ -12,8 +12,20 @@
 .scene-draw-connection-status.success { color: #167a33; background: rgba(53, 167, 88, .15); }
 .scene-draw-connection-status.error { color: #a72323; background: rgba(210, 57, 57, .15); }
 .scene-draw-heading { margin: 14px 0 0; }
-.scene-draw-button { display: inline-flex; align-items: center; gap: 5px; }
+.scene-draw-button { display: inline-flex !important; align-items: center; justify-content: center; flex: 0 0 34px; width: 34px !important; min-width: 34px; height: 34px; min-height: 34px; padding: 0 !important; line-height: 1; }
+.scene-draw-button i { font-size: 16px; margin: 0 !important; }
 .scene-draw-button:disabled { opacity: .6; cursor: wait; }
+.scene-draw-workflow { margin: 10px 0; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #777) 70%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #eee) 65%, transparent); font-size: .86em; }
+.scene-draw-workflow--failed { border-color: #bf4545; }
+.scene-draw-workflow-title { font-weight: 700; margin-bottom: 7px; }
+.scene-draw-workflow-track { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; }
+.scene-draw-workflow-step { display: grid; justify-items: center; gap: 3px; flex: 1; min-width: 0; color: var(--SmartThemeBodyColor, #777); text-align: center; }
+.scene-draw-workflow-marker { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid currentColor; border-radius: 50%; font-size: .82em; }
+.scene-draw-workflow-step.done, .scene-draw-workflow-step.active { color: #207a48; }
+.scene-draw-workflow-step.active .scene-draw-workflow-marker { box-shadow: 0 0 0 3px rgba(32, 122, 72, .15); }
+.scene-draw-workflow-step.failed { color: #bf4545; }
+.scene-draw-workflow-detail { margin-top: 7px; color: var(--SmartThemeBodyColor, #666); }
+.scene-draw-workflow--failed .scene-draw-workflow-detail { color: #bf4545; }
 .scene-draw-result { margin: 10px 0; }
 .scene-draw-result summary { cursor: pointer; margin-bottom: 6px; }
 .scene-draw-result img { display: block; max-width: min(100%, 720px); max-height: 900px; border-radius: 8px; }
