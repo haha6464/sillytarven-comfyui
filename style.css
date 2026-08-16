@@ -31,8 +31,12 @@
 .scene-draw-result { margin: 10px 0; }
 .scene-draw-result summary { cursor: pointer; margin-bottom: 6px; }
 .scene-draw-result img { display: block; max-width: min(100%, 720px); max-height: 900px; border-radius: 8px; }
-.scene-draw-summary-modal { position: fixed; z-index: 10000; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(0, 0, 0, .58); }
-.scene-draw-summary-modal-panel { width: min(680px, 100%); max-height: min(80vh, 720px); display: grid; gap: 14px; padding: 20px; overflow: auto; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 10px; background: var(--SmartThemeBlurTintColor, #fff); color: var(--SmartThemeBodyColor, #111); box-shadow: 0 16px 50px rgba(0, 0, 0, .45); }
+.scene-draw-summary-modal { position: fixed; z-index: 10000; inset: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; width: 100vw; height: 100vh; height: 100dvh; padding: 20px; overflow: auto; background: rgba(0, 0, 0, .58); }
+.scene-draw-summary-modal-panel { box-sizing: border-box; width: min(680px, 100%); max-height: min(calc(100dvh - 40px), 720px); display: grid; gap: 14px; padding: 20px; overflow: auto; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 10px; background: var(--SmartThemeBlurTintColor, #fff); color: var(--SmartThemeBodyColor, #111); box-shadow: 0 16px 50px rgba(0, 0, 0, .45); }
 .scene-draw-summary-modal-panel h3 { margin: 0; }
 .scene-draw-summary-modal-content { margin: 0; padding: 12px; overflow-wrap: anywhere; white-space: pre-wrap; border-radius: 6px; background: rgba(128, 128, 128, .14); color: inherit; font: inherit; }
 .scene-draw-summary-modal-close { justify-self: end; }
+@media (max-width: 600px) {
+  .scene-draw-summary-modal { padding: 12px; }
+  .scene-draw-summary-modal-panel { width: 100%; max-height: calc(100dvh - 24px); padding: 16px; }
+}
