@@ -1,4 +1,5 @@
 import { extension_settings } from "../../../extensions.js";
+import { getContext } from "../../../st-context.js";
 import { chat, eventSource, event_types, saveChatConditional, saveSettingsDebounced } from "../../../../script.js";
 
 const extensionName = "st-chatu8";
@@ -36,7 +37,15 @@ function settings() {
   return extension_settings[extensionName];
 }
 function save() { saveSettingsDebounced(); }
-function headers() { return { "Content-Type": "application/json", "X-CSRF-Token": window.token }; }
+function headers() {
+  const contextHeaders = getContext()?.getRequestHeaders?.() || {};
+  const token = contextHeaders["X-CSRF-TOKEN"] || contextHeaders["X-CSRF-Token"] || window.token;
+  return {
+    ...contextHeaders,
+    "Content-Type": "application/json",
+    ...(token ? { "X-CSRF-Token": token } : {})
+  };
+}
 function notify(kind, message) {
   if (window.toastr?.[kind]) window.toastr[kind](message, "本轮生图");
   else console[kind === "error" ? "error" : "log"]("[本轮生图] " + message);
