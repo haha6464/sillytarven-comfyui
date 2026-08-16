@@ -171,6 +171,22 @@ function blobToDataUrl(blob) {
     reader.readAsDataURL(blob);
   });
 }
+async function persistImage(imageDataUrl) {
+  if (!imageDataUrl.startsWith("data:")) return imageDataUrl;
+  const matched = imageDataUrl.match(/^data:image\/([a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
+  if (!matched) throw new Error("生成图片的格式无效，无法保存到酒馆。");
+  const [, format, image] = matched;
+  debug("正在上传生成图片到酒馆", { format, base64Length: image.length });
+  const response = await fetch("/api/images/upload", {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ image, format })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.path) throw new Error(data.error?.message || data.message || "酒馆未能保存生成图片（" + response.status + "）。");
+  debug("生成图片已保存到酒馆", { path: data.path });
+  return data.path;
+}
 
 async function generateDirect(workflow, onProgress) {
   const base = settings().comfyUrl.replace(/\/$/, "");
@@ -260,8 +276,8 @@ function workflowWidget(mesId, state, position) {
   workflow.append(title, track, detail);
   return workflow;
 }
-function renderWorkflowState(mesId, state) {
-  const mes = document.querySelector('.mes[mesid="' + CSS.escape(String(mesId)) + '"]');
+function renderWorkflowState(mesId, state, messageElement) {
+  const mes = messageElement || document.querySelector('.mes[mesid="' + CSS.escape(String(mesId)) + '"]');
   if (!mes) return;
   mes.querySelectorAll(".scene-draw-workflow").forEach((element) => element.remove());
   if (!state) return;
@@ -283,8 +299,8 @@ function setWorkflowState(mesId, message, step, detail) {
   debug("状态更新", { mesId: Number(mesId), step, detail });
   renderWorkflowState(mesId, message.extra.sceneDrawState);
 }
-function renderImage(mesId, imageUrl, prompt) {
-  const mes = document.querySelector('.mes[mesid="' + CSS.escape(String(mesId)) + '"]');
+function renderImage(mesId, imageUrl, prompt, messageElement) {
+  const mes = messageElement || document.querySelector('.mes[mesid="' + CSS.escape(String(mesId)) + '"]');
   if (!mes) return;
   mes.querySelector(".scene-draw-result")?.remove();
   const result = document.createElement("details");
@@ -316,17 +332,19 @@ async function runForMessage(mesId, button) {
     message.extra.sceneDrawPrompt = prompt;
     button.title = "正在生成图片";
     const image = await generateImage(prompt, (step, detail) => setWorkflowState(mesId, message, step, detail));
-    message.extra.sceneDrawImage = image;
-    renderImage(mesId, image, prompt);
+    setWorkflowState(mesId, message, "generating", "图片已生成，正在保存到酒馆");
+    const savedImage = await persistImage(image);
+    message.extra.sceneDrawImage = savedImage;
+    renderImage(mesId, savedImage, prompt);
     setWorkflowState(mesId, message, "completed", "图片生成完成，可在下方查看");
-    saveChatConditional();
+    await saveChatConditional();
     notify("success", "图片已生成。");
   } catch (error) {
     console.error(logPrefix + " 生成图片失败", error);
     const message = chat[Number(mesId)];
     if (message) {
       setWorkflowState(mesId, message, "failed", error.message || String(error));
-      saveChatConditional();
+      await saveChatConditional();
     }
     notify("error", error.message || String(error));
   } finally {
@@ -337,17 +355,19 @@ async function runForMessage(mesId, button) {
 }
 function decorateMessage(mes) {
   const mesId = mes.getAttribute("mesid");
-  if (mesId === null || mes.querySelector(".scene-draw-button")) return;
+  if (mesId === null) return;
   const message = chat[Number(mesId)];
   if (!message || message.is_user || message.is_system) return;
-  const button = document.createElement("button");
-  button.type = "button"; button.className = "mes_button scene-draw-button"; button.title = "总结此条 AI 回复并生成图片";
-  button.setAttribute("aria-label", "生成图片");
-  button.innerHTML = '<i class="fa-solid fa-image"></i>';
-  (mes.querySelector(".mes_buttons") || mes).append(button);
-  debug("已添加生成图片按钮", { mesId: Number(mesId) });
-  if (message.extra?.sceneDrawImage) renderImage(mesId, message.extra.sceneDrawImage, message.extra.sceneDrawPrompt || "");
-  if (message.extra?.sceneDrawState) renderWorkflowState(mesId, message.extra.sceneDrawState);
+  if (!mes.querySelector(".scene-draw-button")) {
+    const button = document.createElement("button");
+    button.type = "button"; button.className = "mes_button scene-draw-button"; button.title = "总结此条 AI 回复并生成图片";
+    button.setAttribute("aria-label", "生成图片");
+    button.innerHTML = '<i class="fa-solid fa-image"></i>';
+    (mes.querySelector(".mes_buttons") || mes).append(button);
+    debug("已添加生成图片按钮", { mesId: Number(mesId) });
+  }
+  if (message.extra?.sceneDrawImage && !mes.querySelector(".scene-draw-result")) renderImage(mesId, message.extra.sceneDrawImage, message.extra.sceneDrawPrompt || "", mes);
+  if (message.extra?.sceneDrawState && mes.querySelectorAll(".scene-draw-workflow").length < 2) renderWorkflowState(mesId, message.extra.sceneDrawState, mes);
 }
 function decorateMessages() { document.querySelectorAll(".mes[mesid]").forEach(decorateMessage); }
 function showSummaryModal(mesId) {
@@ -527,7 +547,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); debug("插件初始化", { version: "3.0.4" }); bindGenerationClickHandler(); addSettings(); decorateMessages();
+  settings(); debug("插件初始化", { version: "3.0.6" }); bindGenerationClickHandler(); addSettings(); decorateMessages();
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => setTimeout(decorateMessages));
 }
