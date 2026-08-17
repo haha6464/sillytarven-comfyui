@@ -239,13 +239,17 @@ const workflowSteps = [
   ["generating", "ComfyUI 生成"],
   ["completed", "完成"]
 ];
-function workflowWidget(mesId, state, position) {
+let activeMessageId = null;
+let sidebarTrackingBound = false;
+
+function isAiMessage(mesId) {
+  const message = chat[Number(mesId)];
+  return Boolean(message && !message.is_user && !message.is_system);
+}
+function workflowWidget(mesId, state) {
   const currentIndex = workflowSteps.findIndex(([key]) => key === state.step);
   const workflow = document.createElement("div");
-  workflow.className = "scene-draw-workflow scene-draw-workflow--" + position + " scene-draw-workflow--" + state.step;
-  const title = document.createElement("div");
-  title.className = "scene-draw-workflow-title";
-  title.textContent = state.step === "failed" ? "图片生成失败" : "图片生成状态";
+  workflow.className = "scene-draw-workflow scene-draw-workflow--sidebar scene-draw-workflow--" + state.step;
   const track = document.createElement("div");
   track.className = "scene-draw-workflow-track";
   workflowSteps.forEach(([key, text], index) => {
@@ -273,62 +277,108 @@ function workflowWidget(mesId, state, position) {
   const detail = document.createElement("div");
   detail.className = "scene-draw-workflow-detail";
   detail.textContent = state.detail || "";
-  workflow.append(title, track, detail);
+  workflow.append(track, detail);
   return workflow;
 }
-function renderWorkflowState(mesId, state, messageElement) {
-  const mes = messageElement || document.querySelector('.mes[mesid="' + CSS.escape(String(mesId)) + '"]');
-  if (!mes) return;
-  mes.querySelectorAll(".scene-draw-workflow").forEach((element) => element.remove());
-  if (!state) return;
-  const text = mes.querySelector(".mes_text");
-  const start = workflowWidget(mesId, state, "start");
-  const end = workflowWidget(mesId, state, "end");
-  if (text) {
-    text.before(start);
-    const image = mes.querySelector(".scene-draw-result");
-    if (image) image.after(end); else text.after(end);
-  } else {
-    mes.prepend(start);
-    mes.append(end);
+function ensureSidebar() {
+  let sidebar = document.querySelector("#scene-draw-sidebar");
+  if (sidebar) return sidebar;
+  sidebar = document.createElement("aside");
+  sidebar.id = "scene-draw-sidebar";
+  sidebar.className = "scene-draw-sidebar";
+  sidebar.hidden = true;
+  sidebar.setAttribute("aria-label", "本轮生图工具栏");
+  document.body.append(sidebar);
+  return sidebar;
+}
+function renderSidebar() {
+  const sidebar = ensureSidebar();
+  const message = activeMessageId === null ? null : chat[Number(activeMessageId)];
+  if (!message || message.is_user || message.is_system) {
+    sidebar.hidden = true;
+    sidebar.replaceChildren();
+    return;
   }
+  sidebar.hidden = false;
+  const generate = document.createElement("button");
+  generate.type = "button";
+  generate.className = "scene-draw-sidebar-generate";
+  generate.dataset.sceneDrawMesid = String(activeMessageId);
+  generate.disabled = Boolean(message.extra?.sceneDrawBusy);
+  generate.title = message.extra?.sceneDrawBusy ? "正在生成图片" : "总结当前 AI 回复并生成图片";
+  generate.setAttribute("aria-label", "生成图片");
+  generate.innerHTML = '<i class="fa-solid ' + (message.extra?.sceneDrawBusy ? "fa-spinner fa-spin" : "fa-image") + '"></i>';
+  const label = document.createElement("span");
+  label.className = "scene-draw-sidebar-label";
+  label.textContent = "本轮生图";
+  sidebar.replaceChildren(generate, label);
+  if (message.extra?.sceneDrawState) sidebar.append(workflowWidget(activeMessageId, message.extra.sceneDrawState));
+}
+function updateActiveMessage() {
+  const targetY = window.innerHeight * .5;
+  const visible = [...document.querySelectorAll(".mes[mesid]")].map((mes) => ({ mes, rect: mes.getBoundingClientRect() }))
+    .filter(({ rect }) => rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight);
+  const centered = visible.filter(({ rect }) => rect.top <= targetY && rect.bottom >= targetY);
+  const candidate = (centered.length ? centered : visible).sort((a, b) => Math.abs((a.rect.top + a.rect.bottom) / 2 - targetY) - Math.abs((b.rect.top + b.rect.bottom) / 2 - targetY))[0];
+  const mesId = candidate?.mes.getAttribute("mesid");
+  const nextId = mesId !== null && mesId !== undefined && isAiMessage(mesId) ? mesId : null;
+  if (activeMessageId === nextId) return;
+  activeMessageId = nextId;
+  renderSidebar();
+}
+function bindSidebarTracking() {
+  if (sidebarTrackingBound) return;
+  sidebarTrackingBound = true;
+  document.addEventListener("scroll", updateActiveMessage, true);
+  window.addEventListener("resize", updateActiveMessage);
+}
+function renderWorkflowState() {
+  renderSidebar();
 }
 function setWorkflowState(mesId, message, step, detail) {
   message.extra ||= {};
   message.extra.sceneDrawState = { step, detail };
   debug("状态更新", { mesId: Number(mesId), step, detail });
-  renderWorkflowState(mesId, message.extra.sceneDrawState);
+  renderWorkflowState();
 }
 function renderImage(mesId, imageUrl, prompt, messageElement) {
   const mes = messageElement || document.querySelector('.mes[mesid="' + CSS.escape(String(mesId)) + '"]');
   if (!mes) return;
   mes.querySelector(".scene-draw-result")?.remove();
-  const result = document.createElement("details");
+  const result = document.createElement("div");
   result.className = "scene-draw-result";
-  result.open = true;
-  const summary = document.createElement("summary");
-  summary.textContent = "本轮生成图片（点击收起）";
+  const download = document.createElement("a");
+  download.className = "scene-draw-result-download";
+  download.href = imageUrl;
+  download.download = "scene-draw-" + mesId + ".png";
+  download.title = "下载图片";
+  download.setAttribute("aria-label", "下载图片");
+  download.innerHTML = '<i class="fa-solid fa-download"></i>';
   const image = document.createElement("img");
-  image.src = imageUrl; image.alt = prompt; image.title = prompt;
-  result.append(summary, image);
+  image.className = "scene-draw-result-image";
+  image.src = imageUrl; image.alt = prompt; image.title = "点击全屏查看图片";
+  result.append(download, image);
   const text = mes.querySelector(".mes_text");
   if (text) text.after(result); else mes.append(result);
 }
 async function runForMessage(mesId, button) {
-  if (!settings().enabled || button.disabled) return;
+  const initialMessage = chat[Number(mesId)];
+  if (!settings().enabled || button.disabled || initialMessage?.extra?.sceneDrawBusy) return;
   const icon = button.querySelector("i");
   button.disabled = true;
-  icon.className = "fa-solid fa-spinner fa-spin";
+  if (icon) icon.className = "fa-solid fa-spinner fa-spin";
   try {
     const message = chat[Number(mesId)];
     if (!message || message.is_user || message.is_system) throw new Error("请在一条 AI 回复上点击生成图片。");
+    message.extra ||= {};
+    message.extra.sceneDrawBusy = true;
+    renderSidebar();
     const text = cleanText(message.mes);
     if (!text) throw new Error("这条 AI 回复没有可用于总结的文本。");
     debug("点击生成图片", { mesId: Number(mesId), messageLength: text.length });
     button.title = "正在总结场景";
     setWorkflowState(mesId, message, "summarizing", "正在使用 LLM 总结本轮 AI 回复");
     const prompt = await summarizeTurn(text);
-    message.extra ||= {};
     message.extra.sceneDrawPrompt = prompt;
     button.title = "正在生成图片";
     const image = await generateImage(prompt, (step, detail) => setWorkflowState(mesId, message, step, detail));
@@ -349,8 +399,11 @@ async function runForMessage(mesId, button) {
     notify("error", error.message || String(error));
   } finally {
     button.title = "总结此条 AI 回复并生成图片";
-    icon.className = "fa-solid fa-image";
+    if (icon) icon.className = "fa-solid fa-image";
     button.disabled = false;
+    const message = chat[Number(mesId)];
+    if (message?.extra) delete message.extra.sceneDrawBusy;
+    renderSidebar();
   }
 }
 function decorateMessage(mes) {
@@ -358,16 +411,8 @@ function decorateMessage(mes) {
   if (mesId === null) return;
   const message = chat[Number(mesId)];
   if (!message || message.is_user || message.is_system) return;
-  if (!mes.querySelector(".scene-draw-button")) {
-    const button = document.createElement("button");
-    button.type = "button"; button.className = "mes_button scene-draw-button"; button.title = "总结此条 AI 回复并生成图片";
-    button.setAttribute("aria-label", "生成图片");
-    button.innerHTML = '<i class="fa-solid fa-image"></i>';
-    (mes.querySelector(".mes_buttons") || mes).append(button);
-    debug("已添加生成图片按钮", { mesId: Number(mesId) });
-  }
+  mes.querySelectorAll(".scene-draw-button, .scene-draw-workflow").forEach((element) => element.remove());
   if (message.extra?.sceneDrawImage && !mes.querySelector(".scene-draw-result")) renderImage(mesId, message.extra.sceneDrawImage, message.extra.sceneDrawPrompt || "", mes);
-  if (message.extra?.sceneDrawState && mes.querySelectorAll(".scene-draw-workflow").length < 2) renderWorkflowState(mesId, message.extra.sceneDrawState, mes);
 }
 function decorateMessages() { document.querySelectorAll(".mes[mesid]").forEach(decorateMessage); }
 function showSummaryModal(mesId) {
@@ -393,8 +438,26 @@ function showSummaryModal(mesId) {
   close.addEventListener("click", () => modal.remove());
   panel.append(title, content, close);
   modal.append(panel);
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) modal.remove();
+  });
   document.body.append(modal);
   close.focus();
+}
+function showImageViewer(imageUrl, prompt) {
+  document.querySelector(".scene-draw-image-viewer")?.remove();
+  const viewer = document.createElement("div");
+  viewer.className = "scene-draw-image-viewer";
+  viewer.setAttribute("role", "dialog");
+  viewer.setAttribute("aria-modal", "true");
+  viewer.setAttribute("aria-label", "全屏查看图片");
+  const image = document.createElement("img");
+  image.src = imageUrl;
+  image.alt = prompt || "生成图片";
+  image.title = "再次点击关闭";
+  viewer.append(image);
+  viewer.addEventListener("click", () => viewer.remove());
+  document.body.append(viewer);
 }
 function bindGenerationClickHandler() {
   if (generationClickHandlerBound) return;
@@ -402,6 +465,13 @@ function bindGenerationClickHandler() {
   // Some character-card beautifiers clone or replace message nodes. Event
   // delegation keeps copied image buttons functional after that transformation.
   document.addEventListener("click", (event) => {
+    const image = event.target instanceof Element ? event.target.closest(".scene-draw-result-image") : null;
+    if (image) {
+      event.preventDefault();
+      event.stopPropagation();
+      showImageViewer(image.currentSrc || image.src, image.alt);
+      return;
+    }
     const summaryButton = event.target instanceof Element ? event.target.closest(".scene-draw-workflow-summary") : null;
     if (summaryButton) {
       event.preventDefault();
@@ -409,9 +479,9 @@ function bindGenerationClickHandler() {
       showSummaryModal(summaryButton.dataset.sceneDrawMesid);
       return;
     }
-    const target = event.target instanceof Element ? event.target.closest(".scene-draw-button") : null;
+    const target = event.target instanceof Element ? event.target.closest(".scene-draw-sidebar-generate, .scene-draw-button") : null;
     const mes = target?.closest(".mes[mesid]");
-    const mesId = mes?.getAttribute("mesid");
+    const mesId = target?.dataset.sceneDrawMesid || mes?.getAttribute("mesid");
     if (!target || mesId === null || mesId === undefined) return;
     event.preventDefault();
     event.stopPropagation();
@@ -547,8 +617,9 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); debug("插件初始化", { version: "3.0.6" }); bindGenerationClickHandler(); addSettings(); decorateMessages();
+  settings(); debug("插件初始化", { version: "3.1.0" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
-  eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => setTimeout(decorateMessages));
+  eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => setTimeout(() => { decorateMessages(); updateActiveMessage(); }));
 }
 jQuery(start);

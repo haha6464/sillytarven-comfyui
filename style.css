@@ -12,31 +12,37 @@
 .scene-draw-connection-status.success { color: #167a33; background: rgba(53, 167, 88, .15); }
 .scene-draw-connection-status.error { color: #a72323; background: rgba(210, 57, 57, .15); }
 .scene-draw-heading { margin: 14px 0 0; }
-.scene-draw-button { display: inline-flex !important; align-items: center; justify-content: center; flex: 0 0 34px; width: 34px !important; min-width: 34px; height: 34px; min-height: 34px; padding: 0 !important; line-height: 1; }
-.scene-draw-button i { font-size: 16px; margin: 0 !important; }
-.scene-draw-button:disabled { opacity: .6; cursor: wait; }
-.scene-draw-workflow { margin: 10px 0; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #777) 70%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #eee) 65%, transparent); font-size: .86em; }
-.scene-draw-workflow--failed { border-color: #bf4545; }
-.scene-draw-workflow-title { font-weight: 700; margin-bottom: 7px; }
-.scene-draw-workflow-track { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; }
-.scene-draw-workflow-step { display: grid; justify-items: center; gap: 3px; flex: 1; min-width: 0; color: var(--SmartThemeBodyColor, #777); text-align: center; }
+.scene-draw-button { display: none !important; }
+.scene-draw-sidebar { position: fixed; z-index: 999; top: 50%; right: max(12px, env(safe-area-inset-right)); transform: translateY(-50%); display: grid; justify-items: center; gap: 6px; width: 82px; padding: 8px 6px; border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #777) 72%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #222) 88%, transparent); box-shadow: 0 8px 22px rgba(0, 0, 0, .24); backdrop-filter: blur(8px); }
+.scene-draw-sidebar[hidden] { display: none; }
+.scene-draw-sidebar-generate { display: grid; place-items: center; width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: 50%; font-size: 13px; line-height: 1; }
+.scene-draw-sidebar-generate:disabled { opacity: .6; cursor: wait; }
+.scene-draw-sidebar-label { font-size: .72em; line-height: 1; white-space: nowrap; color: var(--SmartThemeBodyColor, #ddd); }
+.scene-draw-workflow--sidebar { width: 100%; font-size: .72em; }
+.scene-draw-workflow--sidebar .scene-draw-workflow-track { display: grid; gap: 5px; }
+.scene-draw-workflow-step { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; justify-items: start; column-gap: 5px; min-width: 0; color: var(--SmartThemeBodyColor, #777); text-align: left; }
 .scene-draw-workflow-summary { appearance: none; border: 0; padding: 0; background: transparent; font: inherit; cursor: pointer; }
 .scene-draw-workflow-summary:hover, .scene-draw-workflow-summary:focus-visible { text-decoration: underline; outline: none; }
-.scene-draw-workflow-marker { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid currentColor; border-radius: 50%; font-size: .82em; }
+.scene-draw-workflow-marker { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid currentColor; border-radius: 50%; font-size: .82em; }
 .scene-draw-workflow-step.done, .scene-draw-workflow-step.active { color: #207a48; }
 .scene-draw-workflow-step.active .scene-draw-workflow-marker { box-shadow: 0 0 0 3px rgba(32, 122, 72, .15); }
 .scene-draw-workflow-step.failed { color: #bf4545; }
-.scene-draw-workflow-detail { margin-top: 7px; color: var(--SmartThemeBodyColor, #666); }
+.scene-draw-workflow-detail { margin-top: 7px; max-height: 4.1em; overflow: auto; color: var(--SmartThemeBodyColor, #666); line-height: 1.35; }
 .scene-draw-workflow--failed .scene-draw-workflow-detail { color: #bf4545; }
-.scene-draw-result { margin: 10px 0; }
-.scene-draw-result summary { cursor: pointer; margin-bottom: 6px; }
-.scene-draw-result img { display: block; max-width: min(100%, 720px); max-height: 900px; border-radius: 8px; }
+.scene-draw-result { position: relative; display: inline-block; max-width: 100%; margin: 10px 0; }
+.scene-draw-result-image { display: block; max-width: min(100%, 720px); max-height: 900px; border-radius: 8px; cursor: zoom-in; }
+.scene-draw-result-download { position: absolute; z-index: 1; top: 8px; right: 8px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(0, 0, 0, .62); color: #fff; text-decoration: none; opacity: 0; transition: opacity .15s ease; }
+.scene-draw-result:hover .scene-draw-result-download, .scene-draw-result-download:focus-visible { opacity: 1; }
+.scene-draw-image-viewer { position: fixed; z-index: 10001; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .9); cursor: zoom-out; }
+.scene-draw-image-viewer img { display: block; max-width: 96vw; max-width: 96dvw; max-height: 96vh; max-height: 96dvh; object-fit: contain; cursor: zoom-out; }
 .scene-draw-summary-modal { position: fixed; z-index: 10000; inset: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; width: 100vw; height: 100vh; height: 100dvh; padding: 20px; overflow: auto; background: rgba(0, 0, 0, .58); }
 .scene-draw-summary-modal-panel { box-sizing: border-box; width: min(680px, 100%); max-height: min(calc(100dvh - 40px), 720px); display: grid; gap: 14px; padding: 20px; overflow: auto; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 10px; background: var(--SmartThemeBlurTintColor, #fff); color: var(--SmartThemeBodyColor, #111); box-shadow: 0 16px 50px rgba(0, 0, 0, .45); }
 .scene-draw-summary-modal-panel h3 { margin: 0; }
 .scene-draw-summary-modal-content { margin: 0; padding: 12px; overflow-wrap: anywhere; white-space: pre-wrap; border-radius: 6px; background: rgba(128, 128, 128, .14); color: inherit; font: inherit; }
 .scene-draw-summary-modal-close { justify-self: end; }
 @media (max-width: 600px) {
+  .scene-draw-sidebar { top: auto; right: 8px; bottom: max(72px, env(safe-area-inset-bottom)); transform: none; width: 74px; padding: 7px 5px; }
   .scene-draw-summary-modal { padding: 12px; }
   .scene-draw-summary-modal-panel { width: 100%; max-height: calc(100dvh - 24px); padding: 16px; }
+  .scene-draw-result-download { opacity: 1; }
 }
