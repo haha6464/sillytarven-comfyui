@@ -41,11 +41,14 @@
 .scene-draw-summary-modal-content { margin: 0; padding: 12px; overflow-wrap: anywhere; white-space: pre-wrap; border-radius: 6px; background: rgba(128, 128, 128, .14); color: inherit; font: inherit; }
 .scene-draw-summary-modal-close { justify-self: end; }
 @media (max-width: 600px) {
-  .scene-draw-sidebar { position: fixed !important; top: 50dvh; right: max(4px, env(safe-area-inset-right)); bottom: auto; transform: translateY(-50%); width: 54px; max-height: calc(100dvh - 28px); padding: 6px 3px; gap: 5px; overflow-x: hidden; overflow-y: auto; }
+  .scene-draw-sidebar { position: fixed !important; top: 50dvh; right: max(4px, env(safe-area-inset-right)); bottom: auto; transform: translateY(-50%); width: 54px; max-height: calc(100dvh - 28px); padding: 9px 3px; gap: 8px; overflow-x: hidden; overflow-y: auto; }
   .scene-draw-sidebar-label { display: none; }
-  .scene-draw-workflow--sidebar { font-size: .64em; }
-  .scene-draw-workflow-step { grid-template-columns: 15px minmax(0, 1fr); column-gap: 3px; }
-  .scene-draw-workflow-marker { width: 14px; height: 14px; font-size: .7em; }
+  .scene-draw-sidebar-generate { width: 38px; min-width: 38px; height: 38px; min-height: 38px; font-size: 16px; }
+  .scene-draw-workflow--sidebar { font-size: .68em; }
+  .scene-draw-workflow--sidebar .scene-draw-workflow-track { gap: 8px; }
+  .scene-draw-workflow-step { grid-template-columns: 22px minmax(0, 1fr); min-height: 30px; column-gap: 4px; }
+  .scene-draw-workflow-marker { width: 20px; height: 20px; font-size: .75em; }
+  .scene-draw-workflow-detail { margin-top: 7px; }
   .scene-draw-summary-modal { padding: 12px; }
   .scene-draw-summary-modal-panel { width: 100%; max-height: calc(100dvh - 24px); padding: 16px; }
   .scene-draw-result-download { opacity: 1; }
