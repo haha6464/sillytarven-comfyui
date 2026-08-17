@@ -234,10 +234,10 @@ async function generateImage(prompt, onProgress) {
 }
 
 const workflowSteps = [
-  ["summarizing", "总结场景"],
-  ["submitting", "提交工作流"],
-  ["generating", "ComfyUI 生成"],
-  ["completed", "完成"]
+  ["summarizing", "总结", "总结场景"],
+  ["submitting", "提交", "提交工作流"],
+  ["generating", "生成", "ComfyUI 生成"],
+  ["completed", "完成", "图片生成完成"]
 ];
 let activeMessageId = null;
 let sidebarTrackingBound = false;
@@ -252,7 +252,7 @@ function workflowWidget(mesId, state) {
   workflow.className = "scene-draw-workflow scene-draw-workflow--sidebar scene-draw-workflow--" + state.step;
   const track = document.createElement("div");
   track.className = "scene-draw-workflow-track";
-  workflowSteps.forEach(([key, text], index) => {
+  workflowSteps.forEach(([key, text, title], index) => {
     const canShowSummary = key === "summarizing" && Boolean(chat[Number(mesId)]?.extra?.sceneDrawPrompt);
     const item = document.createElement(canShowSummary ? "button" : "div");
     item.className = "scene-draw-workflow-step";
@@ -262,7 +262,7 @@ function workflowWidget(mesId, state) {
       item.dataset.sceneDrawMesid = String(mesId);
       item.title = "查看 LLM 总结的场景提示词";
       item.setAttribute("aria-label", "查看总结场景");
-    }
+    } else item.title = title;
     if (state.step === "failed" && index === currentIndex) item.classList.add("failed");
     else if (index < currentIndex || state.step === "completed") item.classList.add("done");
     else if (index === currentIndex) item.classList.add("active");
@@ -276,7 +276,8 @@ function workflowWidget(mesId, state) {
   });
   const detail = document.createElement("div");
   detail.className = "scene-draw-workflow-detail";
-  detail.textContent = state.detail || "";
+  detail.title = state.detail || "";
+  detail.textContent = state.step === "completed" ? "已完成" : state.step === "summarizing" ? "正在总结" : state.step === "submitting" ? "正在提交" : state.step === "generating" ? "正在生成" : state.step === "failed" ? "失败" : state.detail || "";
   workflow.append(track, detail);
   return workflow;
 }
@@ -310,7 +311,7 @@ function renderSidebar() {
   generate.innerHTML = '<i class="fa-solid ' + (message.extra?.sceneDrawBusy ? "fa-spinner fa-spin" : "fa-image") + '"></i>';
   const label = document.createElement("span");
   label.className = "scene-draw-sidebar-label";
-  label.textContent = "本轮生图";
+  label.textContent = "生图";
   sidebar.replaceChildren(generate, label);
   if (message.extra?.sceneDrawState) sidebar.append(workflowWidget(activeMessageId, message.extra.sceneDrawState));
 }
@@ -617,7 +618,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); debug("插件初始化", { version: "3.1.0" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); debug("插件初始化", { version: "3.1.1" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => setTimeout(() => { decorateMessages(); updateActiveMessage(); }));
