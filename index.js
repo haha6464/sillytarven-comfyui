@@ -23,7 +23,7 @@ const defaultWorkflow = {
 };
 
 const defaults = {
-  enabled: true, comfyUrl: "http://127.0.0.1:8188", useComfyProxy: true,
+  enabled: true, sidebarSide: "right", comfyUrl: "http://127.0.0.1:8188", useComfyProxy: true,
   workflow: JSON.stringify(defaultWorkflow, null, 2), positiveNodeId: "5", positiveInputName: "text",
   llmBaseUrl: "", llmApiKey: "", llmModel: "", llmUseProxy: true, llmTemperature: 0.3,
   modelName: "krea2_turbo_fp8_scaled.safetensors", clipName: "qwen3VLInstruct4bHeretic_int8Convrot.safetensors", vaeName: "qwen_image_vae.safetensors",
@@ -283,10 +283,14 @@ function workflowWidget(mesId, state) {
 }
 function ensureSidebar() {
   let sidebar = document.querySelector("#scene-draw-sidebar");
-  if (sidebar) return sidebar;
+  if (sidebar) {
+    sidebar.dataset.side = settings().sidebarSide === "left" ? "left" : "right";
+    return sidebar;
+  }
   sidebar = document.createElement("aside");
   sidebar.id = "scene-draw-sidebar";
   sidebar.className = "scene-draw-sidebar";
+  sidebar.dataset.side = settings().sidebarSide === "left" ? "left" : "right";
   sidebar.hidden = true;
   sidebar.setAttribute("aria-label", "本轮生图工具栏");
   document.body.append(sidebar);
@@ -587,6 +591,24 @@ function addSettings() {
     input.addEventListener("change", () => { settings()[key] = input.checked; save(); });
     content.append(settingField(label, input));
   });
+  content.append(addHeading("界面"));
+  const sidebarSide = document.createElement("input");
+  sidebarSide.type = "range"; sidebarSide.min = "0"; sidebarSide.max = "1"; sidebarSide.step = "1";
+  sidebarSide.value = settings().sidebarSide === "left" ? "0" : "1";
+  sidebarSide.setAttribute("aria-label", "侧栏位置：左侧或右侧");
+  const sidebarSideLabel = document.createElement("output");
+  const updateSidebarSide = () => {
+    const side = sidebarSide.value === "0" ? "left" : "right";
+    settings().sidebarSide = side;
+    sidebarSideLabel.textContent = side === "left" ? "左侧" : "右侧";
+    ensureSidebar().dataset.side = side;
+  };
+  updateSidebarSide();
+  sidebarSide.addEventListener("input", () => { updateSidebarSide(); save(); });
+  const sidebarSideControl = document.createElement("div");
+  sidebarSideControl.className = "scene-draw-input-action";
+  sidebarSideControl.append(sidebarSide, sidebarSideLabel);
+  content.append(settingField("侧栏位置（左 ↔ 右）", sidebarSideControl));
   content.append(addHeading("工作流常用参数"));
   content.append(
     settingField("UNet / 模型文件（{{modelName}}）", inputFor("modelName")),
@@ -618,7 +640,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); debug("插件初始化", { version: "3.1.3" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); debug("插件初始化", { version: "3.1.4" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => setTimeout(() => { decorateMessages(); updateActiveMessage(); }));
