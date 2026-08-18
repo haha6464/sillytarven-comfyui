@@ -241,6 +241,7 @@ const workflowSteps = [
 ];
 let activeMessageId = null;
 let sidebarTrackingBound = false;
+const runningGenerations = new Set();
 
 function isAiMessage(mesId) {
   const message = chat[Number(mesId)];
@@ -305,14 +306,15 @@ function renderSidebar() {
     return;
   }
   sidebar.hidden = false;
+  const isBusy = runningGenerations.has(String(activeMessageId));
   const generate = document.createElement("button");
   generate.type = "button";
   generate.className = "scene-draw-sidebar-generate";
   generate.dataset.sceneDrawMesid = String(activeMessageId);
-  generate.disabled = Boolean(message.extra?.sceneDrawBusy);
-  generate.title = message.extra?.sceneDrawBusy ? "正在生成图片" : "总结当前 AI 回复并生成图片";
+  generate.disabled = isBusy;
+  generate.title = isBusy ? "正在生成图片" : "总结当前 AI 回复并生成图片";
   generate.setAttribute("aria-label", "生成图片");
-  generate.innerHTML = '<i class="fa-solid ' + (message.extra?.sceneDrawBusy ? "fa-spinner fa-spin" : "fa-image") + '"></i>';
+  generate.innerHTML = '<i class="fa-solid ' + (isBusy ? "fa-spinner fa-spin" : "fa-image") + '"></i>';
   const label = document.createElement("span");
   label.className = "scene-draw-sidebar-label";
   label.textContent = "生图";
@@ -388,8 +390,10 @@ function renderImage(mesId, imageUrl, prompt, messageElement) {
   if (text) text.after(result); else mes.append(result);
 }
 async function runForMessage(mesId, button) {
+  const generationKey = String(mesId);
   const initialMessage = chat[Number(mesId)];
-  if (!settings().enabled || button.disabled || initialMessage?.extra?.sceneDrawBusy) return;
+  if (!settings().enabled || runningGenerations.has(generationKey) || !initialMessage) return;
+  runningGenerations.add(generationKey);
   const icon = button.querySelector("i");
   button.disabled = true;
   if (icon) icon.className = "fa-solid fa-spinner fa-spin";
@@ -397,7 +401,6 @@ async function runForMessage(mesId, button) {
     const message = chat[Number(mesId)];
     if (!message || message.is_user || message.is_system) throw new Error("请在一条 AI 回复上点击生成图片。");
     message.extra ||= {};
-    message.extra.sceneDrawBusy = true;
     renderSidebar();
     const text = cleanText(message.mes);
     if (!text) throw new Error("这条 AI 回复没有可用于总结的文本。");
@@ -427,11 +430,7 @@ async function runForMessage(mesId, button) {
     button.title = "总结此条 AI 回复并生成图片";
     if (icon) icon.className = "fa-solid fa-image";
     button.disabled = false;
-    const message = chat[Number(mesId)];
-    if (message?.extra?.sceneDrawBusy) {
-      delete message.extra.sceneDrawBusy;
-      try { await saveChatConditional(); } catch (error) { console.warn(logPrefix + " 清除生图锁时保存聊天失败", error); }
-    }
+    runningGenerations.delete(generationKey);
     renderSidebar();
   }
 }
@@ -664,7 +663,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.1.6" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.1.7" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
