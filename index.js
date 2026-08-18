@@ -360,6 +360,13 @@ function recoverStaleGenerationLocks() {
   debug("已清理页面重启后遗留的生图锁", { count: recovered });
   saveChatConditional().catch((error) => console.warn(logPrefix + " 清理遗留生图锁时保存聊天失败", error));
 }
+function recoverAfterChatLoad() {
+  setTimeout(() => {
+    recoverStaleGenerationLocks();
+    decorateMessages();
+    updateActiveMessage();
+  }, 0);
+}
 function renderImage(mesId, imageUrl, prompt, messageElement) {
   const mes = messageElement || document.querySelector('.mes[mesid="' + CSS.escape(String(mesId)) + '"]');
   if (!mes) return;
@@ -657,9 +664,11 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.1.5" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.1.6" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
+  eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
+  eventSource.on(event_types.CHAT_CHANGED, recoverAfterChatLoad);
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => setTimeout(() => { decorateMessages(); updateActiveMessage(); }));
 }
 jQuery(start);
