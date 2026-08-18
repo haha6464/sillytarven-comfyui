@@ -346,6 +346,20 @@ function setWorkflowState(mesId, message, step, detail) {
   debug("状态更新", { mesId: Number(mesId), step, detail });
   renderWorkflowState();
 }
+function recoverStaleGenerationLocks() {
+  let recovered = 0;
+  chat.forEach((message) => {
+    if (!message?.extra?.sceneDrawBusy) return;
+    delete message.extra.sceneDrawBusy;
+    if (["summarizing", "submitting", "generating"].includes(message.extra.sceneDrawState?.step)) {
+      message.extra.sceneDrawState = { step: "failed", detail: "页面已重启，上次生成已中断；请重新生成。" };
+    }
+    recovered += 1;
+  });
+  if (!recovered) return;
+  debug("已清理页面重启后遗留的生图锁", { count: recovered });
+  saveChatConditional().catch((error) => console.warn(logPrefix + " 清理遗留生图锁时保存聊天失败", error));
+}
 function renderImage(mesId, imageUrl, prompt, messageElement) {
   const mes = messageElement || document.querySelector('.mes[mesid="' + CSS.escape(String(mesId)) + '"]');
   if (!mes) return;
@@ -407,7 +421,10 @@ async function runForMessage(mesId, button) {
     if (icon) icon.className = "fa-solid fa-image";
     button.disabled = false;
     const message = chat[Number(mesId)];
-    if (message?.extra) delete message.extra.sceneDrawBusy;
+    if (message?.extra?.sceneDrawBusy) {
+      delete message.extra.sceneDrawBusy;
+      try { await saveChatConditional(); } catch (error) { console.warn(logPrefix + " 清除生图锁时保存聊天失败", error); }
+    }
     renderSidebar();
   }
 }
@@ -640,7 +657,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); debug("插件初始化", { version: "3.1.4" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.1.5" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => setTimeout(() => { decorateMessages(); updateActiveMessage(); }));
