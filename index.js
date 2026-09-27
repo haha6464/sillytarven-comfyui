@@ -235,6 +235,7 @@ async function generateImage(prompt, onProgress) {
 
 const workflowSteps = [
   ["summarizing", "总结", "总结场景"],
+  ["reviewing", "确认", "确认场景总结"],
   ["submitting", "提交", "提交工作流"],
   ["generating", "生成", "ComfyUI 生成"],
   ["completed", "完成", "图片生成完成"]
@@ -254,15 +255,15 @@ function workflowWidget(mesId, state) {
   const track = document.createElement("div");
   track.className = "scene-draw-workflow-track";
   workflowSteps.forEach(([key, text, title], index) => {
-    const canShowSummary = key === "summarizing" && Boolean(chat[Number(mesId)]?.extra?.sceneDrawPrompt);
+    const canShowSummary = key === "summarizing" && state.step !== "summarizing" && Boolean(chat[Number(mesId)]?.extra?.sceneDrawPrompt);
     const item = document.createElement(canShowSummary ? "button" : "div");
     item.className = "scene-draw-workflow-step";
     if (canShowSummary) {
       item.type = "button";
       item.classList.add("scene-draw-workflow-summary");
       item.dataset.sceneDrawMesid = String(mesId);
-      item.title = "查看 LLM 总结的场景提示词";
-      item.setAttribute("aria-label", "查看总结场景");
+      item.title = "编辑场景总结并生成图片";
+      item.setAttribute("aria-label", "编辑总结场景");
     } else item.title = title;
     if (state.step === "failed" && index === currentIndex) item.classList.add("failed");
     else if (index < currentIndex || state.step === "completed") item.classList.add("done");
@@ -278,7 +279,7 @@ function workflowWidget(mesId, state) {
   const detail = document.createElement("div");
   detail.className = "scene-draw-workflow-detail";
   detail.title = state.detail || "";
-  detail.textContent = state.step === "completed" ? "已完成" : state.step === "summarizing" ? "正在总结" : state.step === "submitting" ? "正在提交" : state.step === "generating" ? "正在生成" : state.step === "failed" ? "失败" : state.detail || "";
+  detail.textContent = state.step === "completed" ? "已完成" : state.step === "summarizing" ? "正在总结" : state.step === "reviewing" ? "待确认" : state.step === "submitting" ? "正在提交" : state.step === "generating" ? "正在生成" : state.step === "failed" ? "失败" : state.detail || "";
   workflow.append(track, detail);
   return workflow;
 }
@@ -307,17 +308,18 @@ function renderSidebar() {
   }
   sidebar.hidden = false;
   const isBusy = runningGenerations.has(String(activeMessageId));
+  const needsReview = message.extra?.sceneDrawState?.step === "reviewing" && Boolean(message.extra.sceneDrawPrompt);
   const generate = document.createElement("button");
   generate.type = "button";
   generate.className = "scene-draw-sidebar-generate";
   generate.dataset.sceneDrawMesid = String(activeMessageId);
   generate.disabled = isBusy;
-  generate.title = isBusy ? "正在生成图片" : "总结当前 AI 回复并生成图片";
-  generate.setAttribute("aria-label", "生成图片");
-  generate.innerHTML = '<i class="fa-solid ' + (isBusy ? "fa-spinner fa-spin" : "fa-image") + '"></i>';
+  generate.title = isBusy ? "正在生成图片" : needsReview ? "编辑并确认场景总结" : "总结当前 AI 回复并生成图片";
+  generate.setAttribute("aria-label", needsReview ? "确认场景总结" : "生成图片");
+  generate.innerHTML = '<i class="fa-solid ' + (isBusy ? "fa-spinner fa-spin" : needsReview ? "fa-pen-to-square" : "fa-image") + '"></i>';
   const label = document.createElement("span");
   label.className = "scene-draw-sidebar-label";
-  label.textContent = "生图";
+  label.textContent = needsReview ? "确认" : "生图";
   sidebar.replaceChildren(generate, label);
   if (message.extra?.sceneDrawState) sidebar.append(workflowWidget(activeMessageId, message.extra.sceneDrawState));
 }
@@ -389,11 +391,47 @@ function renderImage(mesId, imageUrl, prompt, messageElement) {
   const text = mes.querySelector(".mes_text");
   if (text) text.after(result); else mes.append(result);
 }
+async function generateFromSummary(mesId, message, prompt) {
+  const generationKey = String(mesId);
+  if (!settings().enabled || runningGenerations.has(generationKey)) return;
+  if (chat[Number(mesId)] !== message) {
+    notify("error", "聊天已切换，请返回原聊天后重试。");
+    return;
+  }
+  runningGenerations.add(generationKey);
+  try {
+    message.extra ||= {};
+    message.extra.sceneDrawPrompt = prompt;
+    setWorkflowState(mesId, message, "submitting", "已确认场景总结，正在提交工作流");
+    await saveChatConditional();
+    const image = await generateImage(prompt, (step, detail) => setWorkflowState(mesId, message, step, detail));
+    setWorkflowState(mesId, message, "generating", "图片已生成，正在保存到酒馆");
+    const savedImage = await persistImage(image);
+    message.extra.sceneDrawImage = savedImage;
+    renderImage(mesId, savedImage, prompt);
+    setWorkflowState(mesId, message, "completed", "图片生成完成，可在下方查看");
+    await saveChatConditional();
+    notify("success", "图片已生成。");
+  } catch (error) {
+    console.error(logPrefix + " 生成图片失败", error);
+    setWorkflowState(mesId, message, "failed", error.message || String(error));
+    try { await saveChatConditional(); } catch (saveError) { console.warn(logPrefix + " 保存失败状态时出错", saveError); }
+    notify("error", error.message || String(error));
+  } finally {
+    runningGenerations.delete(generationKey);
+    renderSidebar();
+  }
+}
 async function runForMessage(mesId, button) {
   const generationKey = String(mesId);
   const initialMessage = chat[Number(mesId)];
   if (!settings().enabled || runningGenerations.has(generationKey) || !initialMessage) return;
+  if (initialMessage.extra?.sceneDrawState?.step === "reviewing" && initialMessage.extra.sceneDrawPrompt) {
+    showSummaryModal(mesId);
+    return;
+  }
   runningGenerations.add(generationKey);
+  let reviewReady = false;
   const icon = button.querySelector("i");
   button.disabled = true;
   if (icon) icon.className = "fa-solid fa-spinner fa-spin";
@@ -408,22 +446,16 @@ async function runForMessage(mesId, button) {
     button.title = "正在总结场景";
     setWorkflowState(mesId, message, "summarizing", "正在使用 LLM 总结本轮 AI 回复");
     const prompt = await summarizeTurn(text);
+    if (chat[Number(mesId)] !== message) return;
     message.extra.sceneDrawPrompt = prompt;
-    button.title = "正在生成图片";
-    const image = await generateImage(prompt, (step, detail) => setWorkflowState(mesId, message, step, detail));
-    setWorkflowState(mesId, message, "generating", "图片已生成，正在保存到酒馆");
-    const savedImage = await persistImage(image);
-    message.extra.sceneDrawImage = savedImage;
-    renderImage(mesId, savedImage, prompt);
-    setWorkflowState(mesId, message, "completed", "图片生成完成，可在下方查看");
+    setWorkflowState(mesId, message, "reviewing", "请检查或编辑总结，然后确认生图");
     await saveChatConditional();
-    notify("success", "图片已生成。");
+    reviewReady = true;
   } catch (error) {
     console.error(logPrefix + " 生成图片失败", error);
-    const message = chat[Number(mesId)];
-    if (message) {
-      setWorkflowState(mesId, message, "failed", error.message || String(error));
-      await saveChatConditional();
+    if (chat[Number(mesId)] === initialMessage) {
+      setWorkflowState(mesId, initialMessage, "failed", error.message || String(error));
+      try { await saveChatConditional(); } catch (saveError) { console.warn(logPrefix + " 保存失败状态时出错", saveError); }
     }
     notify("error", error.message || String(error));
   } finally {
@@ -433,6 +465,7 @@ async function runForMessage(mesId, button) {
     runningGenerations.delete(generationKey);
     renderSidebar();
   }
+  if (reviewReady && chat[Number(mesId)] === initialMessage) showSummaryModal(mesId);
 }
 function decorateMessage(mes) {
   const mesId = mes.getAttribute("mesid");
@@ -444,7 +477,8 @@ function decorateMessage(mes) {
 }
 function decorateMessages() { document.querySelectorAll(".mes[mesid]").forEach(decorateMessage); }
 function showSummaryModal(mesId) {
-  const summary = chat[Number(mesId)]?.extra?.sceneDrawPrompt;
+  const message = chat[Number(mesId)];
+  const summary = message?.extra?.sceneDrawPrompt;
   if (!summary) return;
   document.querySelector(".scene-draw-summary-modal")?.remove();
   const modal = document.createElement("div");
@@ -456,21 +490,45 @@ function showSummaryModal(mesId) {
   panel.className = "scene-draw-summary-modal-panel";
   const title = document.createElement("h3");
   title.textContent = "LLM 场景总结";
-  const content = document.createElement("pre");
+  const content = document.createElement("textarea");
   content.className = "scene-draw-summary-modal-content";
-  content.textContent = summary;
+  content.value = summary;
+  content.rows = 10;
+  content.setAttribute("aria-label", "编辑场景总结提示词");
+  const actions = document.createElement("div");
+  actions.className = "scene-draw-summary-modal-actions";
   const close = document.createElement("button");
   close.type = "button";
   close.className = "menu_button scene-draw-summary-modal-close";
   close.textContent = "关闭";
   close.addEventListener("click", () => modal.remove());
-  panel.append(title, content, close);
+  const confirm = document.createElement("button");
+  confirm.type = "button";
+  confirm.className = "menu_button scene-draw-summary-modal-confirm";
+  confirm.textContent = "确认并生成";
+  confirm.addEventListener("click", () => {
+    const editedPrompt = content.value.trim();
+    if (!editedPrompt) {
+      notify("error", "场景总结不能为空。");
+      content.focus();
+      return;
+    }
+    if (chat[Number(mesId)] !== message) {
+      notify("error", "聊天已切换，请返回原聊天后重试。");
+      modal.remove();
+      return;
+    }
+    modal.remove();
+    generateFromSummary(mesId, message, editedPrompt);
+  });
+  actions.append(close, confirm);
+  panel.append(title, content, actions);
   modal.append(panel);
   modal.addEventListener("click", (event) => {
     if (event.target === modal) modal.remove();
   });
   document.body.append(modal);
-  close.focus();
+  confirm.focus();
 }
 function showImageViewer(imageUrl, prompt) {
   document.querySelector(".scene-draw-image-viewer")?.remove();
@@ -663,7 +721,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.1.7" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.2.0" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
