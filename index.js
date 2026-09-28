@@ -532,18 +532,19 @@ function showSummaryModal(mesId) {
 }
 function showImageViewer(imageUrl, prompt) {
   document.querySelector(".scene-draw-image-viewer")?.remove();
-  const viewer = document.createElement("div");
+  const viewer = document.createElement("dialog");
   viewer.className = "scene-draw-image-viewer";
-  viewer.setAttribute("role", "dialog");
   viewer.setAttribute("aria-modal", "true");
   viewer.setAttribute("aria-label", "全屏查看图片");
   const image = document.createElement("img");
   image.src = imageUrl;
   image.alt = prompt || "生成图片";
-  image.title = "再次点击关闭";
+  image.title = "点击页面任意位置关闭";
   viewer.append(image);
-  viewer.addEventListener("click", () => viewer.remove());
+  viewer.addEventListener("click", () => viewer.close());
+  viewer.addEventListener("close", () => viewer.remove(), { once: true });
   document.body.append(viewer);
+  viewer.showModal();
 }
 function bindGenerationClickHandler() {
   if (generationClickHandlerBound) return;
@@ -721,7 +722,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.2.0" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.2.1" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
