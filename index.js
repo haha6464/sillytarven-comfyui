@@ -539,9 +539,36 @@ function showImageViewer(imageUrl, prompt) {
   const image = document.createElement("img");
   image.src = imageUrl;
   image.alt = prompt || "生成图片";
-  image.title = "点击页面任意位置关闭";
+  image.title = "滚轮或双指缩放，点击页面任意位置关闭";
   viewer.append(image);
-  viewer.addEventListener("click", () => viewer.close());
+  let scale = 1;
+  let pinchDistance = 0;
+  let suppressCloseUntil = 0;
+  const setScale = (nextScale) => {
+    scale = Math.min(5, Math.max(1, nextScale));
+    image.style.setProperty("--scene-draw-preview-scale", String(scale));
+  };
+  const touchDistance = (first, second) => Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
+  viewer.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    suppressCloseUntil = Date.now() + 250;
+    setScale(scale * (event.deltaY < 0 ? 1.15 : 1 / 1.15));
+  }, { passive: false });
+  viewer.addEventListener("touchstart", (event) => {
+    if (event.touches.length === 2) pinchDistance = touchDistance(event.touches[0], event.touches[1]);
+  }, { passive: false });
+  viewer.addEventListener("touchmove", (event) => {
+    if (event.touches.length !== 2 || !pinchDistance) return;
+    event.preventDefault();
+    const nextDistance = touchDistance(event.touches[0], event.touches[1]);
+    if (nextDistance > 0) setScale(scale * (nextDistance / pinchDistance));
+    pinchDistance = nextDistance;
+    suppressCloseUntil = Date.now() + 350;
+  }, { passive: false });
+  viewer.addEventListener("touchend", () => { pinchDistance = 0; });
+  viewer.addEventListener("click", () => {
+    if (Date.now() >= suppressCloseUntil) viewer.close();
+  });
   viewer.addEventListener("close", () => viewer.remove(), { once: true });
   document.body.append(viewer);
   viewer.showModal();
@@ -722,7 +749,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.2.1" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.2.2" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
