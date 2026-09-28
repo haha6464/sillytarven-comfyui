@@ -542,11 +542,20 @@ function showImageViewer(imageUrl, prompt) {
   image.title = "滚轮或双指缩放，点击页面任意位置关闭";
   viewer.append(image);
   let scale = 1;
+  let offsetX = 0;
+  let offsetY = 0;
   let pinchDistance = 0;
+  let panStart = null;
   let suppressCloseUntil = 0;
+  const applyTransform = () => {
+    image.style.setProperty("--scene-draw-preview-scale", String(scale));
+    image.style.setProperty("--scene-draw-preview-offset-x", offsetX + "px");
+    image.style.setProperty("--scene-draw-preview-offset-y", offsetY + "px");
+  };
   const setScale = (nextScale) => {
     scale = Math.min(5, Math.max(1, nextScale));
-    image.style.setProperty("--scene-draw-preview-scale", String(scale));
+    if (scale === 1) { offsetX = 0; offsetY = 0; }
+    applyTransform();
   };
   const touchDistance = (first, second) => Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
   viewer.addEventListener("wheel", (event) => {
@@ -555,17 +564,40 @@ function showImageViewer(imageUrl, prompt) {
     setScale(scale * (event.deltaY < 0 ? 1.15 : 1 / 1.15));
   }, { passive: false });
   viewer.addEventListener("touchstart", (event) => {
-    if (event.touches.length === 2) pinchDistance = touchDistance(event.touches[0], event.touches[1]);
+    if (event.touches.length === 2) {
+      pinchDistance = touchDistance(event.touches[0], event.touches[1]);
+      panStart = null;
+    } else if (event.touches.length === 1 && scale > 1) {
+      const touch = event.touches[0];
+      panStart = { x: touch.clientX, y: touch.clientY, offsetX, offsetY };
+    }
   }, { passive: false });
   viewer.addEventListener("touchmove", (event) => {
-    if (event.touches.length !== 2 || !pinchDistance) return;
-    event.preventDefault();
-    const nextDistance = touchDistance(event.touches[0], event.touches[1]);
-    if (nextDistance > 0) setScale(scale * (nextDistance / pinchDistance));
-    pinchDistance = nextDistance;
-    suppressCloseUntil = Date.now() + 350;
+    if (event.touches.length === 2 && pinchDistance) {
+      event.preventDefault();
+      const nextDistance = touchDistance(event.touches[0], event.touches[1]);
+      if (nextDistance > 0) setScale(scale * (nextDistance / pinchDistance));
+      pinchDistance = nextDistance;
+      suppressCloseUntil = Date.now() + 350;
+      return;
+    }
+    if (event.touches.length === 1 && panStart) {
+      event.preventDefault();
+      const touch = event.touches[0];
+      offsetX = panStart.offsetX + touch.clientX - panStart.x;
+      offsetY = panStart.offsetY + touch.clientY - panStart.y;
+      applyTransform();
+      suppressCloseUntil = Date.now() + 350;
+    }
   }, { passive: false });
-  viewer.addEventListener("touchend", () => { pinchDistance = 0; });
+  viewer.addEventListener("touchend", (event) => {
+    pinchDistance = 0;
+    if (event.touches.length === 1 && scale > 1) {
+      const touch = event.touches[0];
+      panStart = { x: touch.clientX, y: touch.clientY, offsetX, offsetY };
+    } else panStart = null;
+  });
+  viewer.addEventListener("touchcancel", () => { pinchDistance = 0; panStart = null; });
   viewer.addEventListener("click", () => {
     if (Date.now() >= suppressCloseUntil) viewer.close();
   });
@@ -749,7 +781,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.2.2" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.2.3" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
