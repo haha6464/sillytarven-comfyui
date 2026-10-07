@@ -235,9 +235,6 @@ async function generateImage(prompt, onProgress) {
 
 const workflowSteps = [
   ["summarizing", "总结", "总结场景"],
-  ["reviewing", "确认", "确认场景总结"],
-  ["submitting", "提交", "提交工作流"],
-  ["generating", "生成", "ComfyUI 生成"],
   ["completed", "完成", "图片生成完成"]
 ];
 let activeMessageId = null;
@@ -249,13 +246,13 @@ function isAiMessage(mesId) {
   return Boolean(message && !message.is_user && !message.is_system);
 }
 function workflowWidget(mesId, state) {
-  const currentIndex = workflowSteps.findIndex(([key]) => key === state.step);
+  const summaryReady = Boolean(chat[Number(mesId)]?.extra?.sceneDrawPrompt) && state.step !== "summarizing";
   const workflow = document.createElement("div");
   workflow.className = "scene-draw-workflow scene-draw-workflow--sidebar scene-draw-workflow--" + state.step;
   const track = document.createElement("div");
   track.className = "scene-draw-workflow-track";
   workflowSteps.forEach(([key, text, title], index) => {
-    const canShowSummary = key === "summarizing" && state.step !== "summarizing" && Boolean(chat[Number(mesId)]?.extra?.sceneDrawPrompt);
+    const canShowSummary = key === "summarizing" && summaryReady;
     const item = document.createElement(canShowSummary ? "button" : "div");
     item.className = "scene-draw-workflow-step";
     if (canShowSummary) {
@@ -265,9 +262,12 @@ function workflowWidget(mesId, state) {
       item.title = "编辑场景总结并生成图片";
       item.setAttribute("aria-label", "编辑总结场景");
     } else item.title = title;
-    if (state.step === "failed" && index === currentIndex) item.classList.add("failed");
-    else if (index < currentIndex || state.step === "completed") item.classList.add("done");
-    else if (index === currentIndex) item.classList.add("active");
+    if (key === "summarizing") {
+      if (state.step === "summarizing") item.classList.add("active");
+      else if (summaryReady) item.classList.add("done");
+    } else if (state.step === "failed") item.classList.add("failed");
+    else if (state.step === "completed") item.classList.add("done");
+    else if (summaryReady) item.classList.add("active");
     const marker = document.createElement("span");
     marker.className = "scene-draw-workflow-marker";
     marker.textContent = item.classList.contains("done") ? "✓" : String(index + 1);
@@ -279,8 +279,9 @@ function workflowWidget(mesId, state) {
   const detail = document.createElement("div");
   detail.className = "scene-draw-workflow-detail";
   detail.title = state.detail || "";
-  detail.textContent = state.step === "completed" ? "已完成" : state.step === "summarizing" ? "正在总结" : state.step === "reviewing" ? "待确认" : state.step === "submitting" ? "正在提交" : state.step === "generating" ? "正在生成" : state.step === "failed" ? "失败" : state.detail || "";
-  workflow.append(track, detail);
+  detail.textContent = state.step === "completed" ? "" : state.step === "summarizing" ? "正在总结" : state.step === "reviewing" ? "待确认" : state.step === "submitting" ? "正在提交" : state.step === "generating" ? "正在生成" : state.step === "failed" ? "失败" : state.detail || "";
+  workflow.append(track);
+  if (detail.textContent) workflow.append(detail);
   return workflow;
 }
 function ensureSidebar() {
@@ -781,7 +782,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.2.3" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.2.4" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
