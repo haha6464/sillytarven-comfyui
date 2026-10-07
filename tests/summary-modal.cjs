@@ -32,7 +32,7 @@ if (process.argv[2] === '--preview') {
     radios[0].checked = true; radios[0].dispatchEvent(new Event('change'));
     const disabledAfter = button.disabled;
     radios[0].checked = false; button.disabled = true;
-    return { viewport: [innerWidth, innerHeight], radioValues: radios.map(radio => radio.value), disabledBefore, disabledAfter, buttons: modal.querySelectorAll('button').length, submitText: button.textContent, fitsPanel: ratios.left >= panel.left && submit.right <= panel.right, submitRightOfRatios: submit.left >= ratios.right };
+    return { viewport: [innerWidth, innerHeight], radioValues: radios.map(radio => radio.value), disabledBefore, disabledAfter, buttons: modal.querySelectorAll('button').length, submitText: button.textContent, fitsPanel: ratios.left >= panel.left && submit.right <= panel.right, submitRightOfRatios: submit.left >= ratios.right, submitGap: submit.left - ratios.right, centerAligned: Math.abs((submit.top + submit.bottom) / 2 - (ratios.top + ratios.bottom) / 2) < 1 };
   })()`);
   process.exit(0);
 }
@@ -127,4 +127,6 @@ assert(buttons.includes('width: auto'));
 const actions = css.match(/\.scene-draw-summary-modal-actions\s*\{([^}]+)\}/)[1];
 assert(actions.includes('flex-direction: row'));
 assert(actions.includes('flex-wrap: nowrap'));
+assert(actions.includes('justify-content: flex-start'));
+assert(actions.includes('align-items: center'));
 console.log('Summary modal: ratio rows, mandatory selection, submit, backdrop, stale chat and button layout checks passed.');

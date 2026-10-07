@@ -52,7 +52,7 @@
 .scene-draw-summary-modal-panel { box-sizing: border-box; width: min(680px, 100%); max-height: min(calc(100dvh - 40px), 720px); display: grid; gap: 14px; padding: 20px; overflow: auto; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 10px; background: var(--SmartThemeBlurTintColor, #fff); color: var(--SmartThemeBodyColor, #111); box-shadow: 0 16px 50px rgba(0, 0, 0, .45); }
 .scene-draw-summary-modal-panel h3 { margin: 0; }
 .scene-draw-summary-modal-content { box-sizing: border-box; width: 100%; min-height: 180px; max-height: min(45dvh, 360px); margin: 0; padding: 12px; overflow: auto; resize: vertical; overflow-wrap: anywhere; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 6px; background: #fff; color: #111; font: inherit; }
-.scene-draw-summary-modal-actions { display: flex; flex-direction: row; flex-wrap: nowrap; justify-content: space-between; align-items: flex-end; gap: 12px; }
+.scene-draw-summary-modal-actions { display: flex; flex-direction: row; flex-wrap: nowrap; justify-content: flex-start; align-items: center; gap: 12px; }
 .scene-draw-summary-modal-actions > button { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: auto; min-width: 72px; min-height: 40px; height: auto; margin: 0; padding: 8px 16px; border-radius: 8px; white-space: nowrap; word-break: keep-all; writing-mode: horizontal-tb; line-height: 1.25; }
 .scene-draw-summary-modal-confirm:disabled { opacity: .45; cursor: not-allowed; }
 .scene-draw-aspect-ratios { display: grid; gap: 5px; min-width: 0; font-size: .85em; }
