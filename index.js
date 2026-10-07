@@ -517,7 +517,7 @@ function showSummaryModal(mesId) {
   const confirm = document.createElement("button");
   confirm.type = "button";
   confirm.className = "menu_button scene-draw-summary-modal-confirm";
-  confirm.textContent = "确认并生成";
+  confirm.textContent = "提交";
   confirm.addEventListener("click", () => {
     const editedPrompt = content.value.trim();
     if (!editedPrompt) {
