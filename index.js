@@ -234,8 +234,8 @@ async function generateImage(prompt, onProgress) {
 }
 
 const workflowSteps = [
-  ["summarizing", "总结", "总结场景"],
-  ["completed", "完成", "图片生成完成"]
+  ["summarizing", "总结"],
+  ["completed", "完成"]
 ];
 let activeMessageId = null;
 let sidebarTrackingBound = false;
@@ -251,7 +251,7 @@ function workflowWidget(mesId, state) {
   workflow.className = "scene-draw-workflow scene-draw-workflow--sidebar scene-draw-workflow--" + state.step;
   const track = document.createElement("div");
   track.className = "scene-draw-workflow-track";
-  workflowSteps.forEach(([key, text, title], index) => {
+  workflowSteps.forEach(([key, text], index) => {
     const canShowSummary = key === "summarizing" && summaryReady;
     const item = document.createElement(canShowSummary ? "button" : "div");
     item.className = "scene-draw-workflow-step";
@@ -259,9 +259,8 @@ function workflowWidget(mesId, state) {
       item.type = "button";
       item.classList.add("scene-draw-workflow-summary");
       item.dataset.sceneDrawMesid = String(mesId);
-      item.title = "编辑场景总结并生成图片";
       item.setAttribute("aria-label", "编辑总结场景");
-    } else item.title = title;
+    }
     if (key === "summarizing") {
       if (state.step === "summarizing") item.classList.add("active");
       else if (summaryReady) item.classList.add("done");
@@ -276,12 +275,7 @@ function workflowWidget(mesId, state) {
     item.append(marker, label);
     track.append(item);
   });
-  const detail = document.createElement("div");
-  detail.className = "scene-draw-workflow-detail";
-  detail.title = state.detail || "";
-  detail.textContent = state.step === "completed" ? "" : state.step === "summarizing" ? "正在总结" : state.step === "reviewing" ? "待确认" : state.step === "submitting" ? "正在提交" : state.step === "generating" ? "正在生成" : state.step === "failed" ? "失败" : state.detail || "";
   workflow.append(track);
-  if (detail.textContent) workflow.append(detail);
   return workflow;
 }
 function ensureSidebar() {
@@ -299,6 +293,39 @@ function ensureSidebar() {
   document.body.append(sidebar);
   return sidebar;
 }
+function sidebarPresentation(message, isBusy) {
+  const step = message.extra?.sceneDrawState?.step;
+  if (isBusy) {
+    const stage = step === "summarizing" ? "正在总结场景" : step === "submitting" ? "正在提交工作流" : step === "completed" ? "正在保存聊天" : "正在生成图片";
+    return { state: "busy", name: stage, badge: "" };
+  }
+  if (step === "reviewing" && message.extra?.sceneDrawPrompt) return { state: "review", name: "确认场景总结", badge: "✎" };
+  if (step === "completed") return { state: "completed", name: "重新生成图片", badge: "✓" };
+  if (step === "failed") return { state: "failed", name: "重试生成图片", badge: "!" };
+  return { state: "idle", name: "生成图片", badge: "" };
+}
+function sidebarGenerateControl(mesId, message, isBusy) {
+  const presentation = sidebarPresentation(message, isBusy);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "scene-draw-sidebar-generate";
+  button.dataset.sceneDrawMesid = String(mesId);
+  button.dataset.state = presentation.state;
+  button.disabled = isBusy;
+  button.setAttribute("aria-label", presentation.name);
+  button.setAttribute("aria-busy", String(isBusy));
+  // Keep the image glyph stable; stage feedback is separate from the action icon.
+  button.innerHTML = '<svg class="scene-draw-generate-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><circle cx="8" cy="10" r="1"/><path d="m4 18 5-5 4 4 3-3 4 4M17 2v6M14 5h6"/></svg>';
+  if (isBusy || presentation.badge) {
+    const badge = document.createElement("span");
+    badge.className = "scene-draw-generate-badge";
+    badge.setAttribute("aria-hidden", "true");
+    if (isBusy) badge.innerHTML = "<span></span><span></span><span></span>";
+    else badge.textContent = presentation.badge;
+    button.append(badge);
+  }
+  return button;
+}
 function renderSidebar() {
   const sidebar = ensureSidebar();
   const message = activeMessageId === null ? null : chat[Number(activeMessageId)];
@@ -309,19 +336,8 @@ function renderSidebar() {
   }
   sidebar.hidden = false;
   const isBusy = runningGenerations.has(String(activeMessageId));
-  const needsReview = message.extra?.sceneDrawState?.step === "reviewing" && Boolean(message.extra.sceneDrawPrompt);
-  const generate = document.createElement("button");
-  generate.type = "button";
-  generate.className = "scene-draw-sidebar-generate";
-  generate.dataset.sceneDrawMesid = String(activeMessageId);
-  generate.disabled = isBusy;
-  generate.title = isBusy ? "正在生成图片" : needsReview ? "编辑并确认场景总结" : "总结当前 AI 回复并生成图片";
-  generate.setAttribute("aria-label", needsReview ? "确认场景总结" : "生成图片");
-  generate.innerHTML = '<i class="fa-solid ' + (isBusy ? "fa-spinner fa-spin" : needsReview ? "fa-pen-to-square" : "fa-image") + '"></i>';
-  const label = document.createElement("span");
-  label.className = "scene-draw-sidebar-label";
-  label.textContent = needsReview ? "确认" : "生图";
-  sidebar.replaceChildren(generate, label);
+  const button = sidebarGenerateControl(activeMessageId, message, isBusy);
+  sidebar.replaceChildren(button);
   if (message.extra?.sceneDrawState) sidebar.append(workflowWidget(activeMessageId, message.extra.sceneDrawState));
 }
 function updateActiveMessage() {
@@ -433,9 +449,7 @@ async function runForMessage(mesId, button) {
   }
   runningGenerations.add(generationKey);
   let reviewReady = false;
-  const icon = button.querySelector("i");
   button.disabled = true;
-  if (icon) icon.className = "fa-solid fa-spinner fa-spin";
   try {
     const message = chat[Number(mesId)];
     if (!message || message.is_user || message.is_system) throw new Error("请在一条 AI 回复上点击生成图片。");
@@ -444,7 +458,6 @@ async function runForMessage(mesId, button) {
     const text = cleanText(message.mes);
     if (!text) throw new Error("这条 AI 回复没有可用于总结的文本。");
     debug("点击生成图片", { mesId: Number(mesId), messageLength: text.length });
-    button.title = "正在总结场景";
     setWorkflowState(mesId, message, "summarizing", "正在使用 LLM 总结本轮 AI 回复");
     const prompt = await summarizeTurn(text);
     if (chat[Number(mesId)] !== message) return;
@@ -460,8 +473,6 @@ async function runForMessage(mesId, button) {
     }
     notify("error", error.message || String(error));
   } finally {
-    button.title = "总结此条 AI 回复并生成图片";
-    if (icon) icon.className = "fa-solid fa-image";
     button.disabled = false;
     runningGenerations.delete(generationKey);
     renderSidebar();
