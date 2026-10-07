@@ -49,7 +49,17 @@ function debug(event, detail = {}) {
 function cleanText(value) {
   return String(value || "").replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<thinking>[\s\S]*?<\/thinking>/gi, "").replace(/<\/??image[^>]*>/gi, "").trim();
 }
-function workflowVariables(prompt) {
+const imageAspectRatios = {
+  "9:16": { width: 900, height: 1600 },
+  "3:4": { width: 1050, height: 1400 },
+  "16:9": { width: 1600, height: 900 },
+  "4:3": { width: 1400, height: 1050 },
+  "1:1": { width: 1200, height: 1200 }
+};
+function imageSizeForRatio(ratio) {
+  return Object.hasOwn(imageAspectRatios, ratio) ? { ...imageAspectRatios[ratio] } : null;
+}
+function workflowVariables(prompt, imageSize) {
   const conf = settings();
   return {
     prompt,
@@ -57,8 +67,8 @@ function workflowVariables(prompt) {
     clipName: conf.clipName,
     vaeName: conf.vaeName,
     negativePrompt: conf.negativePrompt,
-    width: conf.width,
-    height: conf.height,
+    width: imageSize?.width ?? conf.width,
+    height: imageSize?.height ?? conf.height,
     batchSize: conf.batchSize,
     seed: conf.seed,
     steps: conf.steps,
@@ -147,14 +157,24 @@ async function testComfyConnection() {
   return data;
 }
 
-function workflowWithPrompt(prompt) {
+function workflowWithPrompt(prompt, imageSize) {
   const conf = settings();
   let workflow;
   try { workflow = JSON.parse(conf.workflow); } catch (error) { throw new Error("工作流 JSON 无效：" + error.message); }
   const node = workflow[conf.positiveNodeId];
   if (!node?.inputs || !(conf.positiveInputName in node.inputs)) throw new Error("找不到正向提示词位置：节点 " + conf.positiveNodeId + " 的 " + conf.positiveInputName + "。");
   node.inputs[conf.positiveInputName] = prompt;
-  return replacePlaceholders(workflow, workflowVariables(prompt));
+  workflow = replacePlaceholders(workflow, workflowVariables(prompt, imageSize));
+  if (imageSize) {
+    // Support older imported workflows with literal sizes, without replacing linked inputs.
+    for (const { inputs } of Object.values(workflow)) {
+      if (typeof inputs?.width === "number" && typeof inputs?.height === "number") {
+        inputs.width = imageSize.width;
+        inputs.height = imageSize.height;
+      }
+    }
+  }
+  return workflow;
 }
 function outputImage(record) {
   for (const output of Object.values(record.outputs || {})) {
@@ -225,11 +245,11 @@ async function generateProxy(workflow, onProgress) {
   if (!data.data) throw new Error(data.error?.message || "酒馆代理没有返回图片数据。");
   return "data:image/" + (data.format || "png") + ";base64," + data.data;
 }
-async function generateImage(prompt, onProgress) {
+async function generateImage(prompt, onProgress, imageSize) {
   if (!settings().comfyUrl) throw new Error("请先填写 ComfyUI 地址。");
   debug("开始 ComfyUI 生图", { viaProxy: settings().useComfyProxy, promptLength: prompt.length });
   onProgress?.("submitting", "正在整理工作流并提交给 ComfyUI");
-  const workflow = workflowWithPrompt(prompt);
+  const workflow = workflowWithPrompt(prompt, imageSize);
   return settings().useComfyProxy ? generateProxy(workflow, onProgress) : generateDirect(workflow, onProgress);
 }
 
@@ -408,20 +428,26 @@ function renderImage(mesId, imageUrl, prompt, messageElement) {
   const text = mes.querySelector(".mes_text");
   if (text) text.after(result); else mes.append(result);
 }
-async function generateFromSummary(mesId, message, prompt) {
+async function generateFromSummary(mesId, message, prompt, aspectRatio) {
   const generationKey = String(mesId);
   if (!settings().enabled || runningGenerations.has(generationKey)) return;
   if (chat[Number(mesId)] !== message) {
     notify("error", "聊天已切换，请返回原聊天后重试。");
     return;
   }
+  const imageSize = imageSizeForRatio(aspectRatio);
+  if (!imageSize) {
+    notify("error", "请选择图片比例。");
+    return;
+  }
   runningGenerations.add(generationKey);
   try {
     message.extra ||= {};
     message.extra.sceneDrawPrompt = prompt;
+    message.extra.sceneDrawAspectRatio = aspectRatio;
     setWorkflowState(mesId, message, "submitting", "已确认场景总结，正在提交工作流");
     await saveChatConditional();
-    const image = await generateImage(prompt, (step, detail) => setWorkflowState(mesId, message, step, detail));
+    const image = await generateImage(prompt, (step, detail) => setWorkflowState(mesId, message, step, detail), imageSize);
     setWorkflowState(mesId, message, "generating", "图片已生成，正在保存到酒馆");
     const savedImage = await persistImage(image);
     message.extra.sceneDrawImage = savedImage;
@@ -509,16 +535,51 @@ function showSummaryModal(mesId) {
   content.setAttribute("aria-label", "编辑场景总结提示词");
   const actions = document.createElement("div");
   actions.className = "scene-draw-summary-modal-actions";
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "menu_button scene-draw-summary-modal-close";
-  close.textContent = "关闭";
-  close.addEventListener("click", () => modal.remove());
   const confirm = document.createElement("button");
   confirm.type = "button";
   confirm.className = "menu_button scene-draw-summary-modal-confirm";
   confirm.textContent = "提交";
+  confirm.disabled = true;
+  let selectedRatio = null;
+  const ratios = document.createElement("div");
+  ratios.className = "scene-draw-aspect-ratios";
+  ratios.setAttribute("role", "radiogroup");
+  ratios.setAttribute("aria-label", "图片比例（必选）");
+  ratios.setAttribute("aria-required", "true");
+  let firstRadio;
+  [["竖版", "9:16", "3:4"], ["横版", "16:9", "4:3"], ["", "1:1"]].forEach(([heading, ...options]) => {
+    const row = document.createElement("div");
+    row.className = "scene-draw-aspect-row";
+    const label = document.createElement("span");
+    label.className = "scene-draw-aspect-heading";
+    label.textContent = heading;
+    row.append(label);
+    options.forEach((ratio) => {
+      const option = document.createElement("label");
+      option.className = "scene-draw-aspect-option";
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "scene-draw-aspect-ratio";
+      radio.value = ratio;
+      radio.required = true;
+      firstRadio ||= radio;
+      radio.addEventListener("change", () => {
+        if (!radio.checked) return;
+        selectedRatio = radio.value;
+        confirm.disabled = !imageSizeForRatio(selectedRatio);
+      });
+      const text = document.createElement("span");
+      text.textContent = ratio;
+      option.append(radio, text);
+      row.append(option);
+    });
+    ratios.append(row);
+  });
   confirm.addEventListener("click", () => {
+    if (!imageSizeForRatio(selectedRatio)) {
+      firstRadio.focus();
+      return;
+    }
     const editedPrompt = content.value.trim();
     if (!editedPrompt) {
       notify("error", "场景总结不能为空。");
@@ -531,16 +592,16 @@ function showSummaryModal(mesId) {
       return;
     }
     modal.remove();
-    generateFromSummary(mesId, message, editedPrompt);
+    generateFromSummary(mesId, message, editedPrompt, selectedRatio);
   });
-  actions.append(close, confirm);
+  actions.append(ratios, confirm);
   panel.append(title, content, actions);
   modal.append(panel);
   modal.addEventListener("click", (event) => {
     if (event.target === modal) modal.remove();
   });
   document.body.append(modal);
-  confirm.focus();
+  firstRadio.focus();
 }
 function showImageViewer(imageUrl, prompt) {
   document.querySelector(".scene-draw-image-viewer")?.remove();

@@ -7,6 +7,39 @@ const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'index.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'style.css'), 'utf8');
 const modalSource = source.slice(source.indexOf('function showSummaryModal('), source.indexOf('function showImageViewer('));
+const ratioSource = source.slice(source.indexOf('const imageAspectRatios ='), source.indexOf('function workflowVariables('));
+if (process.argv[2] === '--preview') {
+  console.log(`(() => {
+    if (document.querySelector('#scene-draw-summary-preview-style')) throw new Error('Preview already open');
+    window.__sceneDrawSummaryOriginal = document.querySelector('.scene-draw-summary-modal');
+    window.__sceneDrawSummaryOriginal?.remove();
+    const style = document.createElement('style');
+    style.id = 'scene-draw-summary-preview-style'; style.textContent = ${JSON.stringify(css)};
+    document.head.append(style);
+    const chat = [{ extra: { sceneDrawPrompt: '场景预览' } }];
+    const generateFromSummary = () => {};
+    const notify = () => {};
+    ${ratioSource}
+    ${modalSource}
+    showSummaryModal(0);
+    const modal = document.querySelector('.scene-draw-summary-modal');
+    const radios = [...modal.querySelectorAll('input[type="radio"]')];
+    const button = modal.querySelector('button');
+    const panel = modal.querySelector('section').getBoundingClientRect();
+    const ratios = modal.querySelector('.scene-draw-aspect-ratios').getBoundingClientRect();
+    const submit = button.getBoundingClientRect();
+    const disabledBefore = button.disabled;
+    radios[0].checked = true; radios[0].dispatchEvent(new Event('change'));
+    const disabledAfter = button.disabled;
+    radios[0].checked = false; button.disabled = true;
+    return { viewport: [innerWidth, innerHeight], radioValues: radios.map(radio => radio.value), disabledBefore, disabledAfter, buttons: modal.querySelectorAll('button').length, submitText: button.textContent, fitsPanel: ratios.left >= panel.left && submit.right <= panel.right, submitRightOfRatios: submit.left >= ratios.right };
+  })()`);
+  process.exit(0);
+}
+if (process.argv[2] === '--restore') {
+  console.log(`(() => { document.querySelector('.scene-draw-summary-modal')?.remove(); document.querySelector('#scene-draw-summary-preview-style')?.remove(); if (window.__sceneDrawSummaryOriginal) document.body.append(window.__sceneDrawSummaryOriginal); delete window.__sceneDrawSummaryOriginal; return 'Preview restored'; })()`);
+  process.exit(0);
+}
 class Element {
   constructor(tag) { this.tag = tag; this.children = []; this.events = {}; }
   setAttribute() {}
@@ -25,30 +58,48 @@ const context = vm.createContext({
   notify: (...args) => notices.push(args),
   generateFromSummary: (...args) => generated.push(args),
 });
-vm.runInContext(modalSource, context);
+vm.runInContext(ratioSource + modalSource, context);
 const openModal = () => {
   context.showSummaryModal(0);
   const modal = body.children.at(-1);
   const [title, content, actions] = modal.children[0].children;
-  const [close, submit] = actions.children;
-  return { modal, title, content, actions, close, submit };
+  const [ratios, submit] = actions.children;
+  const radios = ratios.children.flatMap(row => row.children.slice(1).map(option => option.children[0]));
+  const select = ratio => {
+    const radio = radios.find(item => item.value === ratio);
+    radio.checked = true;
+    radio.events.change();
+  };
+  return { modal, title, content, actions, ratios, radios, select, submit };
 };
 let ui = openModal();
-assert.equal(ui.close.textContent, '关闭');
 assert.equal(ui.submit.textContent, '提交');
 assert.equal(ui.actions.children.length, 2);
+assert.equal(ui.actions.children.filter(child => child.tag === 'button').length, 1, 'No close button');
 assert.equal(ui.submit.type, 'button');
 assert.equal(ui.content.value, 'original scene');
-ui.close.events.click();
+assert(ui.submit.disabled, 'Selection is mandatory with no default');
+assert.deepEqual(ui.radios.map(radio => radio.value), ['9:16', '3:4', '16:9', '4:3', '1:1']);
+assert(ui.radios.every(radio => radio.required && !radio.checked));
+assert.deepEqual(ui.ratios.children.map(row => row.children[0].textContent), ['竖版', '横版', '']);
+ui.submit.events.click();
+assert.equal(generated.length, 0, 'Missing ratio cannot submit');
+ui.modal.events.click({ target: ui.content });
+assert(!ui.modal.removed, 'Inside clicks do not close');
+ui.modal.events.click({ target: ui.modal });
 assert(ui.modal.removed);
 assert.equal(generated.length, 0, 'Closing does not submit');
 ui = openModal();
 ui.content.value = '  edited scene  ';
+ui.select('3:4');
+assert.equal(ui.submit.disabled, false);
 ui.submit.events.click();
 assert(ui.modal.removed);
 assert.equal(generated[0][2], 'edited scene', 'Submit continues with the edited summary');
+assert.equal(generated[0][3], '3:4');
 ui = openModal();
 ui.content.value = '   ';
+ui.select('1:1');
 ui.submit.events.click();
 assert.equal(generated.length, 1, 'Empty prompt is not submitted');
 assert(!ui.modal.removed);
@@ -56,6 +107,18 @@ assert(ui.content.focused);
 assert.equal(notices.at(-1)[0], 'error');
 ui.modal.events.click({ target: ui.modal });
 assert(ui.modal.removed, 'Backdrop still closes the modal');
+for (const ratio of ['9:16', '3:4', '16:9', '4:3', '1:1']) {
+  ui = openModal();
+  ui.select(ratio);
+  ui.submit.events.click();
+  assert.equal(generated.at(-1)[3], ratio);
+}
+ui = openModal();
+ui.select('9:16');
+context.chat[0] = {};
+const beforeSwitch = generated.length;
+ui.submit.events.click();
+assert.equal(generated.length, beforeSwitch, 'Switching chat blocks stale submissions');
 const buttons = css.match(/\.scene-draw-summary-modal-actions > button\s*\{([^}]+)\}/)[1];
 assert(buttons.includes('white-space: nowrap'));
 assert(buttons.includes('writing-mode: horizontal-tb'));
@@ -64,4 +127,4 @@ assert(buttons.includes('width: auto'));
 const actions = css.match(/\.scene-draw-summary-modal-actions\s*\{([^}]+)\}/)[1];
 assert(actions.includes('flex-direction: row'));
 assert(actions.includes('flex-wrap: nowrap'));
-console.log('Summary modal: horizontal button styling, labels, close, edited submit and empty prompt checks passed.');
+console.log('Summary modal: ratio rows, mandatory selection, submit, backdrop, stale chat and button layout checks passed.');

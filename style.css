@@ -52,8 +52,14 @@
 .scene-draw-summary-modal-panel { box-sizing: border-box; width: min(680px, 100%); max-height: min(calc(100dvh - 40px), 720px); display: grid; gap: 14px; padding: 20px; overflow: auto; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 10px; background: var(--SmartThemeBlurTintColor, #fff); color: var(--SmartThemeBodyColor, #111); box-shadow: 0 16px 50px rgba(0, 0, 0, .45); }
 .scene-draw-summary-modal-panel h3 { margin: 0; }
 .scene-draw-summary-modal-content { box-sizing: border-box; width: 100%; min-height: 180px; max-height: min(45dvh, 360px); margin: 0; padding: 12px; overflow: auto; resize: vertical; overflow-wrap: anywhere; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 6px; background: #fff; color: #111; font: inherit; }
-.scene-draw-summary-modal-actions { display: flex; flex-direction: row; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: 8px; }
+.scene-draw-summary-modal-actions { display: flex; flex-direction: row; flex-wrap: nowrap; justify-content: space-between; align-items: flex-end; gap: 12px; }
 .scene-draw-summary-modal-actions > button { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: auto; min-width: 72px; min-height: 40px; height: auto; margin: 0; padding: 8px 16px; border-radius: 8px; white-space: nowrap; word-break: keep-all; writing-mode: horizontal-tb; line-height: 1.25; }
+.scene-draw-summary-modal-confirm:disabled { opacity: .45; cursor: not-allowed; }
+.scene-draw-aspect-ratios { display: grid; gap: 5px; min-width: 0; font-size: .85em; }
+.scene-draw-aspect-row { display: grid; grid-template-columns: 2.2em repeat(2, auto); align-items: center; gap: 8px; }
+.scene-draw-aspect-heading { white-space: nowrap; }
+.scene-draw-aspect-option { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; margin: 0; white-space: nowrap; cursor: pointer; }
+.scene-draw-aspect-option input[type="radio"] { flex: 0 0 auto; width: 15px; height: 15px; margin: 0; cursor: pointer; }
 @media (max-width: 600px) {
   .scene-draw-sidebar { position: fixed !important; top: 50dvh; right: max(4px, env(safe-area-inset-right)); bottom: auto; transform: translateY(-50%); width: 54px; max-height: calc(100dvh - 28px); padding: 9px 3px; gap: 8px; overflow-x: hidden; overflow-y: auto; }
   .scene-draw-sidebar[data-side="left"] { right: auto; left: max(4px, env(safe-area-inset-left)); }
@@ -64,6 +70,8 @@
   .scene-draw-workflow-marker { width: 20px; height: 20px; font-size: .75em; }
   .scene-draw-summary-modal { padding: 12px; }
   .scene-draw-summary-modal-panel { width: 100%; max-height: calc(100dvh - 24px); padding: 16px; }
+  .scene-draw-summary-modal-actions > button { min-width: 64px; padding: 8px 12px; }
+  .scene-draw-aspect-row { column-gap: 5px; }
   .scene-draw-result-download { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
