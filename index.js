@@ -23,7 +23,7 @@ const defaultWorkflow = {
 };
 
 const defaults = {
-  enabled: true, sidebarSide: "right", comfyUrl: "http://127.0.0.1:8188", useComfyProxy: true,
+  enabled: true, sidebarSide: "right", lastAspectRatio: "", comfyUrl: "http://127.0.0.1:8188", useComfyProxy: true,
   workflow: JSON.stringify(defaultWorkflow, null, 2), positiveNodeId: "5", positiveInputName: "text",
   llmBaseUrl: "", llmApiKey: "", llmModel: "", llmUseProxy: true, llmTemperature: 0.3,
   modelName: "krea2_turbo_fp8_scaled.safetensors", clipName: "qwen3VLInstruct4bHeretic_int8Convrot.safetensors", vaeName: "qwen_image_vae.safetensors",
@@ -539,14 +539,16 @@ function showSummaryModal(mesId) {
   confirm.type = "button";
   confirm.className = "menu_button scene-draw-summary-modal-confirm";
   confirm.textContent = "提交";
-  confirm.disabled = true;
-  let selectedRatio = null;
+  const rememberedRatio = settings().lastAspectRatio;
+  let selectedRatio = imageSizeForRatio(rememberedRatio) ? rememberedRatio : null;
+  confirm.disabled = !selectedRatio;
   const ratios = document.createElement("div");
   ratios.className = "scene-draw-aspect-ratios";
   ratios.setAttribute("role", "radiogroup");
   ratios.setAttribute("aria-label", "图片比例（必选）");
   ratios.setAttribute("aria-required", "true");
   let firstRadio;
+  let selectedRadio;
   [["竖版", "9:16", "3:4"], ["横版", "16:9", "4:3"], ["", "1:1"]].forEach(([heading, ...options]) => {
     const row = document.createElement("div");
     row.className = "scene-draw-aspect-row";
@@ -562,11 +564,17 @@ function showSummaryModal(mesId) {
       radio.name = "scene-draw-aspect-ratio";
       radio.value = ratio;
       radio.required = true;
+      radio.checked = selectedRatio === ratio;
+      if (radio.checked) selectedRadio = radio;
       firstRadio ||= radio;
       radio.addEventListener("change", () => {
         if (!radio.checked) return;
         selectedRatio = radio.value;
         confirm.disabled = !imageSizeForRatio(selectedRatio);
+        if (!confirm.disabled) {
+          settings().lastAspectRatio = selectedRatio;
+          save();
+        }
       });
       const text = document.createElement("span");
       text.textContent = ratio;
@@ -601,7 +609,7 @@ function showSummaryModal(mesId) {
     if (event.target === modal) modal.remove();
   });
   document.body.append(modal);
-  firstRadio.focus();
+  (selectedRadio || firstRadio).focus();
 }
 function showImageViewer(imageUrl, prompt) {
   document.querySelector(".scene-draw-image-viewer")?.remove();

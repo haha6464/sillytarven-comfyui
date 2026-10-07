@@ -19,6 +19,9 @@ if (process.argv[2] === '--preview') {
     const chat = [{ extra: { sceneDrawPrompt: '场景预览' } }];
     const generateFromSummary = () => {};
     const notify = () => {};
+    const previewSettings = {};
+    const settings = () => previewSettings;
+    const save = () => {};
     ${ratioSource}
     ${modalSource}
     showSummaryModal(0);
@@ -52,20 +55,25 @@ const body = new Element('body');
 const message = { extra: { sceneDrawPrompt: 'original scene' } };
 const generated = [];
 const notices = [];
+let savedSettings = { lastAspectRatio: '' };
+let saveCount = 0;
 const context = vm.createContext({
   chat: [message],
+  settings: () => savedSettings,
+  save: () => { saveCount += 1; },
   document: { body, querySelector: () => null, createElement: tag => new Element(tag) },
   notify: (...args) => notices.push(args),
   generateFromSummary: (...args) => generated.push(args),
 });
 vm.runInContext(ratioSource + modalSource, context);
-const openModal = () => {
-  context.showSummaryModal(0);
+const openModal = (mesId = 0) => {
+  context.showSummaryModal(mesId);
   const modal = body.children.at(-1);
   const [title, content, actions] = modal.children[0].children;
   const [ratios, submit] = actions.children;
   const radios = ratios.children.flatMap(row => row.children.slice(1).map(option => option.children[0]));
   const select = ratio => {
+    radios.forEach(radio => { radio.checked = false; });
     const radio = radios.find(item => item.value === ratio);
     radio.checked = true;
     radio.events.change();
@@ -93,11 +101,16 @@ ui = openModal();
 ui.content.value = '  edited scene  ';
 ui.select('3:4');
 assert.equal(ui.submit.disabled, false);
+assert.equal(savedSettings.lastAspectRatio, '3:4');
+assert.equal(saveCount, 1, 'Selection is saved immediately');
 ui.submit.events.click();
 assert(ui.modal.removed);
 assert.equal(generated[0][2], 'edited scene', 'Submit continues with the edited summary');
 assert.equal(generated[0][3], '3:4');
 ui = openModal();
+assert.equal(ui.radios.find(radio => radio.checked).value, '3:4', 'Reopening remembers selection');
+assert.equal(ui.submit.disabled, false);
+assert(ui.radios.find(radio => radio.checked).focused, 'Focus keeps the remembered ratio');
 ui.content.value = '   ';
 ui.select('1:1');
 ui.submit.events.click();
@@ -107,6 +120,18 @@ assert(ui.content.focused);
 assert.equal(notices.at(-1)[0], 'error');
 ui.modal.events.click({ target: ui.modal });
 assert(ui.modal.removed, 'Backdrop still closes the modal');
+ui = openModal();
+assert.equal(ui.radios.find(radio => radio.checked).value, '1:1', 'Closing without submitting still remembers selection');
+ui.modal.remove();
+// Reloaded settings and another message/chat use the same last selected preference.
+savedSettings = JSON.parse(JSON.stringify(savedSettings));
+context.chat[1] = { extra: { sceneDrawPrompt: 'another chat scene', sceneDrawAspectRatio: '4:3' } };
+ui = openModal(1);
+assert.equal(ui.radios.find(radio => radio.checked).value, '1:1', 'Another chat defaults to the last selection');
+assert.equal(ui.submit.disabled, false);
+ui.submit.events.click();
+assert.equal(generated.at(-1)[0], 1);
+assert.equal(generated.at(-1)[3], '1:1');
 for (const ratio of ['9:16', '3:4', '16:9', '4:3', '1:1']) {
   ui = openModal();
   ui.select(ratio);
@@ -119,6 +144,11 @@ context.chat[0] = {};
 const beforeSwitch = generated.length;
 ui.submit.events.click();
 assert.equal(generated.length, beforeSwitch, 'Switching chat blocks stale submissions');
+context.chat[0] = message;
+savedSettings.lastAspectRatio = 'invalid';
+ui = openModal();
+assert(ui.radios.every(radio => !radio.checked), 'Invalid remembered values are not preselected');
+assert(ui.submit.disabled);
 const buttons = css.match(/\.scene-draw-summary-modal-actions > button\s*\{([^}]+)\}/)[1];
 assert(buttons.includes('white-space: nowrap'));
 assert(buttons.includes('writing-mode: horizontal-tb'));
@@ -129,4 +159,4 @@ assert(actions.includes('flex-direction: row'));
 assert(actions.includes('flex-wrap: nowrap'));
 assert(actions.includes('justify-content: flex-start'));
 assert(actions.includes('align-items: center'));
-console.log('Summary modal: ratio rows, mandatory selection, submit, backdrop, stale chat and button layout checks passed.');
+console.log('Summary modal: remembered ratios across reopening/reloaded settings/other chats, mandatory selection, submit and layout checks passed.');
