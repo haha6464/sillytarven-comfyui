@@ -650,12 +650,12 @@ function showSummaryModal(mesId) {
     settings().lastCharacterLora = character.name;
     save();
   }, index => loraState.characters[index]?.label || "角色");
-  addSlider("zoom LoRA", -12, 0, .5, loraState.zoom, !loraState.zoomSupported, value => {
+  addSlider("zoom LoRA", 0, 12, .5, -loraState.zoom, !loraState.zoomSupported, value => {
     if (!loraState.zoomSupported) return;
-    loraControls.zoom = zoomLoraValue(value);
+    loraControls.zoom = value === 0 ? 0 : zoomLoraValue(-value);
     settings().lastZoomLora = loraControls.zoom;
     save();
-  }, value => "zoom " + value.toFixed(1));
+  }, value => "zoom " + (-value).toFixed(1));
   let firstRadio;
   let selectedRadio;
   [["竖版", "9:16", "3:4"], ["横版", "16:9", "4:3"], ["", "1:1"]].forEach(([heading, ...options]) => {
@@ -974,7 +974,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.0" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.1" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);

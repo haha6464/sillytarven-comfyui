@@ -92,7 +92,7 @@ assert.equal(ui.submitControls.children.filter(child => child.tag === 'button').
 assert.equal(ui.submit.type, 'button');
 assert.equal(ui.content.value, 'original scene');
 assert.equal(ui.sliders.length, 2);
-assert.deepEqual(ui.sliders.map(slider => [slider.min, slider.max, slider.step]), [['0', '5', '1'], ['-12', '0', '0.5']]);
+assert.deepEqual(ui.sliders.map(slider => [slider.min, slider.max, slider.step]), [['0', '5', '1'], ['0', '12', '0.5']]);
 assert(ui.sliders.every(slider => !slider.disabled));
 assert.deepEqual(ui.sliderGroup.children.map(field => field.children[0].textContent), ['李蕊男', 'zoom 0.0']);
 assert(ui.submit.disabled, 'Selection is mandatory with no default');
@@ -157,7 +157,7 @@ context.chat[0] = message;
 ui = openModal();
 ui.sliders[0].value = '4';
 ui.sliders[0].events.input();
-ui.sliders[1].value = '-7.5';
+ui.sliders[1].value = '7.5';
 ui.sliders[1].events.input();
 assert.equal(savedSettings.lastCharacterLora, 'YinShiyou_v1_9500');
 assert.equal(savedSettings.lastZoomLora, -7.5);
@@ -165,10 +165,20 @@ assert.deepEqual(ui.sliderGroup.children.map(field => field.children[0].textCont
 ui.modal.events.click({ target: ui.modal });
 savedSettings = JSON.parse(JSON.stringify(savedSettings));
 ui = openModal(1);
-assert.deepEqual(ui.sliders.map(slider => slider.value), ['4', '-7.5'], 'Slider choices survive reload/other chats');
+assert.deepEqual(ui.sliders.map(slider => slider.value), ['4', '7.5'], 'Stored negative zoom restores to the correct positive slider position');
 ui.submit.events.click();
 assert.equal(generated.at(-1)[4].character, 'YinShiyou_v1_9500');
 assert.equal(generated.at(-1)[4].zoom, -7.5);
+for (const position of [0, .5, 12]) {
+  ui = openModal();
+  ui.sliders[1].value = String(position);
+  ui.sliders[1].events.input();
+  const expectedZoom = position === 0 ? 0 : -position;
+  assert.equal(savedSettings.lastZoomLora, expectedZoom, 'Left is 0, right is -12');
+  assert.equal(ui.sliderGroup.children[1].children[0].textContent, 'zoom ' + expectedZoom.toFixed(1));
+  ui.submit.events.click();
+  assert.equal(generated.at(-1)[4].zoom, expectedZoom, 'Submit uses the real negative zoom value');
+}
 savedSettings.lastAspectRatio = 'invalid';
 ui = openModal();
 assert(ui.radios.every(radio => !radio.checked), 'Invalid remembered values are not preselected');
