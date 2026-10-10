@@ -7,7 +7,9 @@ const variables = source.slice(source.indexOf('const imageAspectRatios ='), sour
 const workflowCode = source.slice(source.indexOf('function workflowWithPrompt('), source.indexOf('function outputImage('));
 const imageCode = source.slice(source.indexOf('async function generateImage('), source.indexOf('const workflowSteps ='));
 const generationCode = source.slice(source.indexOf('async function generateFromSummary('), source.indexOf('async function runForMessage('));
+const defaultWorkflow = vm.runInNewContext(source.slice(source.indexOf('const defaultWorkflow ='), source.indexOf('const defaults =')) + '; defaultWorkflow');
 const template = {
+  '3': defaultWorkflow['3'],
   '5': { inputs: { text: '{{prompt}}' } },
   '13': { inputs: { width: '{{width}}', height: '{{height}}', batch_size: 1 } },
   '20': { inputs: { width: 1024, height: 1024 } },
@@ -32,7 +34,8 @@ vm.runInContext(variables + workflowCode + imageCode + generationCode, context);
   for (const useProxy of [true, false]) {
     conf.useComfyProxy = useProxy;
     for (const [ratio, [width, height]] of Object.entries(sizes)) {
-      await context.generateFromSummary(0, message, 'edited scene', ratio);
+      const controls = { character: 'MouYunxuan_v1', zoom: -6.5 };
+      await context.generateFromSummary(0, message, 'edited scene', ratio, controls);
       const request = requests.at(-1);
       assert.equal(request.route, useProxy ? 'proxy' : 'direct');
       for (const nodeId of ['13', '20']) {
@@ -40,6 +43,12 @@ vm.runInContext(variables + workflowCode + imageCode + generationCode, context);
         assert.equal(request.workflow[nodeId].inputs.height, height);
       }
       assert.equal(request.workflow['5'].inputs.text, 'edited scene');
+      const loras = request.workflow['3'].inputs.loras.__value__;
+      assert.equal(loras.find(entry => entry.name === controls.character).active, true);
+      assert.equal(loras.find(entry => entry.name === 'LiRuinan_v2').active, false);
+      assert.equal(loras.find(entry => entry.name === 'zoom_krea2_loraholic').strength, controls.zoom);
+      assert.equal(message.extra.sceneDrawLoraControls.character, controls.character);
+      assert.equal(message.extra.sceneDrawLoraControls.zoom, controls.zoom);
       assert.deepEqual(JSON.parse(JSON.stringify(request.workflow['21'].inputs)), template['21'].inputs, 'Linked dimensions stay intact');
       assert.equal(message.extra.sceneDrawAspectRatio, ratio);
       assert.equal(message.extra.sceneDrawState.step, 'completed');

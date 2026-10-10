@@ -8,7 +8,18 @@ let generationClickHandlerBound = false;
 
 // Supplied Krea workflow, already in ComfyUI API format.
 const defaultWorkflow = {
-  "3": { "inputs": { "text": "<lora:LiRuinan_v2:1.00>, <lora:SNOFS_krea_v1_2:1.00>, <lora:penis_size_krea2_v2_loraholic:-4.00:-4.00>, <lora:breast_size_v2_krea2_loraholic:-1.00>", "loras": { "__value__": [{ "name": "LiRuinan_v2", "strength": "1.00", "active": true, "expanded": false, "clipStrength": "1.00", "selected": false, "locked": false }, { "name": "breast_size_v2_krea2_loraholic", "strength": "-1.00", "active": true, "expanded": false, "clipStrength": "-1.00", "selected": false, "locked": false }, { "name": "penis_size_krea2_v2_loraholic", "strength": "-3.00", "active": true, "expanded": false, "clipStrength": "-3.00", "selected": false, "locked": false }, { "name": "SNOFS_krea_v1_2", "strength": 1, "active": true, "expanded": false, "clipStrength": 1, "selected": false, "locked": false }] }, "model": ["10", 0], "clip": ["6", 0] }, "class_type": "Lora Loader (LoraManager)" },
+  "3": { "inputs": { "text": "<lora:LiRuinan_v2:1.00>, <lora:YangMaguo_v1_7500:1.00>, <lora:MouYunxuan_v1:1.00>, <lora:LanXidan_v1:1.00>, <lora:YinShiyou_v1_9500:1.00>, <lora:ZhouXinyi_v1:1.00>, <lora:breast_size_v2_krea2_loraholic:1.00>, <lora:penis_size_krea2_v2_loraholic:-1.00:-1.00>, <lora:zoom_krea2_loraholic:0.00>, <lora:SNOFS_krea_v1_5:0.80>", "loras": { "__value__": [
+    { "name": "LiRuinan_v2", "strength": "1.00", "active": true, "expanded": false, "clipStrength": "1.00", "selected": false, "locked": false },
+    { "name": "YangMaguo_v1_7500", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
+    { "name": "MouYunxuan_v1", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
+    { "name": "LanXidan_v1", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
+    { "name": "YinShiyou_v1_9500", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
+    { "name": "ZhouXinyi_v1", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
+    { "name": "breast_size_v2_krea2_loraholic", "strength": "-1.00", "active": true, "expanded": false, "clipStrength": "-1.00", "selected": false, "locked": false },
+    { "name": "penis_size_krea2_v2_loraholic", "strength": "-1.00", "active": true, "expanded": false, "clipStrength": "-1.00", "selected": false, "locked": false },
+    { "name": "zoom_krea2_loraholic", "strength": "0.00", "active": true, "expanded": false, "clipStrength": "0.00", "selected": false, "locked": false },
+    { "name": "SNOFS_krea_v1_5", "strength": 0.80, "active": true, "expanded": false, "clipStrength": 0.80, "selected": false, "locked": false }
+  ] }, "model": ["10", 0], "clip": ["6", 0] }, "class_type": "Lora Loader (LoraManager)" },
   "5": { "inputs": { "text": "{{prompt}}", "clip": ["3", 1] }, "class_type": "CLIPTextEncode" },
   "6": { "inputs": { "clip_name": "{{clipName}}", "type": "krea2", "device": "default" }, "class_type": "CLIPLoader" },
   "7": { "inputs": { "vae_name": "{{vaeName}}" }, "class_type": "VAELoader" },
@@ -24,6 +35,7 @@ const defaultWorkflow = {
 
 const defaults = {
   enabled: true, sidebarSide: "right", lastAspectRatio: "", comfyUrl: "http://127.0.0.1:8188", useComfyProxy: true,
+  lastCharacterLora: "", lastZoomLora: null,
   workflow: JSON.stringify(defaultWorkflow, null, 2), positiveNodeId: "5", positiveInputName: "text",
   llmBaseUrl: "", llmApiKey: "", llmModel: "", llmUseProxy: true, llmTemperature: 0.3,
   modelName: "krea2_turbo_fp8_scaled.safetensors", clipName: "qwen3VLInstruct4bHeretic_int8Convrot.safetensors", vaeName: "qwen_image_vae.safetensors",
@@ -58,6 +70,66 @@ const imageAspectRatios = {
 };
 function imageSizeForRatio(ratio) {
   return Object.hasOwn(imageAspectRatios, ratio) ? { ...imageAspectRatios[ratio] } : null;
+}
+const characterLoras = [
+  { label: "李蕊男", name: "LiRuinan_v2" },
+  { label: "杨玛果", name: "YangMaguo_v1_7500" },
+  { label: "牟纭萱", name: "MouYunxuan_v1" },
+  { label: "兰茜丹", name: "LanXidan_v1" },
+  { label: "尹施又", name: "YinShiyou_v1_9500" },
+  { label: "周心怡", name: "ZhouXinyi_v1" }
+];
+const zoomLoraName = "zoom_krea2_loraholic";
+function loraName(name) {
+  return String(name || "").split(/[\\/]/).pop().replace(/\.(safetensors|ckpt|pt)$/i, "");
+}
+function zoomLoraValue(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(-12, Math.min(0, Math.round(number * 2) / 2)) : null;
+}
+function loraManagerInputs(workflow) {
+  return Object.values(workflow).filter(node => node?.class_type === "Lora Loader (LoraManager)" && Array.isArray(node.inputs?.loras?.__value__)).map(node => node.inputs);
+}
+function loraControlState() {
+  const conf = settings();
+  let entries = [];
+  try { entries = loraManagerInputs(JSON.parse(conf.workflow)).flatMap(inputs => inputs.loras.__value__); } catch { /* Workflow validation happens at submission. */ }
+  const characters = characterLoras.filter(character => entries.some(entry => loraName(entry.name) === character.name));
+  const activeCharacter = entries.find(entry => entry.active && characters.some(character => character.name === loraName(entry.name)));
+  const character = characters.find(item => item.name === conf.lastCharacterLora)?.name || loraName(activeCharacter?.name) || characters[0]?.name || null;
+  const zoom = entries.find(entry => loraName(entry.name) === zoomLoraName);
+  return { characters, character, zoomSupported: Boolean(zoom), zoom: zoomLoraValue(conf.lastZoomLora) ?? zoomLoraValue(zoom?.strength) ?? 0 };
+}
+function applyLoraControls(workflow, controls) {
+  if (!controls || (!controls.character && (controls.zoom === null || controls.zoom === undefined))) return;
+  const inputsList = loraManagerInputs(workflow);
+  const character = controls.character;
+  const zoom = zoomLoraValue(controls.zoom);
+  if (character && (!characterLoras.some(item => item.name === character) || !inputsList.some(inputs => inputs.loras.__value__.some(entry => loraName(entry.name) === character)))) throw new Error("工作流中找不到所选角色 LoRA。");
+  if (controls.zoom !== null && controls.zoom !== undefined && (zoom === null || !inputsList.some(inputs => inputs.loras.__value__.some(entry => loraName(entry.name) === zoomLoraName)))) throw new Error("工作流中找不到 zoom LoRA 或参数无效。");
+  for (const inputs of inputsList) {
+    const entries = inputs.loras.__value__;
+    for (const entry of entries) {
+      const name = loraName(entry.name);
+      if (character && characterLoras.some(item => item.name === name)) entry.active = name === character;
+      if (zoom !== null && name === zoomLoraName) {
+        entry.active = true;
+        entry.strength = zoom;
+        entry.clipStrength = zoom;
+      }
+    }
+    // Keep the textual representation in sync, without touching unrelated LoRA tags.
+    if (typeof inputs.text !== "string") continue;
+    let text = inputs.text.replace(/<lora:([^:>]+):[^>]*>/g, (tag, name) => (character && characterLoras.some(item => item.name === loraName(name))) || (zoom !== null && loraName(name) === zoomLoraName) ? "" : tag);
+    text = text.replace(/(?:,\s*){2,}/g, ", ").replace(/^\s*,\s*|\s*,\s*$/g, "").trim();
+    const selected = entries.find(entry => loraName(entry.name) === character);
+    const zoomEntry = entries.find(entry => loraName(entry.name) === zoomLoraName);
+    const tags = [text];
+    if (selected) tags.push("<lora:" + selected.name + ":" + selected.strength + ":" + (selected.clipStrength ?? selected.strength) + ">");
+    if (zoom !== null && zoomEntry) tags.push("<lora:" + zoomEntry.name + ":" + zoom.toFixed(2) + ">");
+    inputs.text = tags.filter(Boolean).join(", ");
+  }
 }
 function workflowVariables(prompt, imageSize) {
   const conf = settings();
@@ -157,7 +229,7 @@ async function testComfyConnection() {
   return data;
 }
 
-function workflowWithPrompt(prompt, imageSize) {
+function workflowWithPrompt(prompt, imageSize, loraControls) {
   const conf = settings();
   let workflow;
   try { workflow = JSON.parse(conf.workflow); } catch (error) { throw new Error("工作流 JSON 无效：" + error.message); }
@@ -165,6 +237,7 @@ function workflowWithPrompt(prompt, imageSize) {
   if (!node?.inputs || !(conf.positiveInputName in node.inputs)) throw new Error("找不到正向提示词位置：节点 " + conf.positiveNodeId + " 的 " + conf.positiveInputName + "。");
   node.inputs[conf.positiveInputName] = prompt;
   workflow = replacePlaceholders(workflow, workflowVariables(prompt, imageSize));
+  applyLoraControls(workflow, loraControls);
   if (imageSize) {
     // Support older imported workflows with literal sizes, without replacing linked inputs.
     for (const { inputs } of Object.values(workflow)) {
@@ -245,11 +318,11 @@ async function generateProxy(workflow, onProgress) {
   if (!data.data) throw new Error(data.error?.message || "酒馆代理没有返回图片数据。");
   return "data:image/" + (data.format || "png") + ";base64," + data.data;
 }
-async function generateImage(prompt, onProgress, imageSize) {
+async function generateImage(prompt, onProgress, imageSize, loraControls) {
   if (!settings().comfyUrl) throw new Error("请先填写 ComfyUI 地址。");
   debug("开始 ComfyUI 生图", { viaProxy: settings().useComfyProxy, promptLength: prompt.length });
   onProgress?.("submitting", "正在整理工作流并提交给 ComfyUI");
-  const workflow = workflowWithPrompt(prompt, imageSize);
+  const workflow = workflowWithPrompt(prompt, imageSize, loraControls);
   return settings().useComfyProxy ? generateProxy(workflow, onProgress) : generateDirect(workflow, onProgress);
 }
 
@@ -428,7 +501,7 @@ function renderImage(mesId, imageUrl, prompt, messageElement) {
   const text = mes.querySelector(".mes_text");
   if (text) text.after(result); else mes.append(result);
 }
-async function generateFromSummary(mesId, message, prompt, aspectRatio) {
+async function generateFromSummary(mesId, message, prompt, aspectRatio, loraControls) {
   const generationKey = String(mesId);
   if (!settings().enabled || runningGenerations.has(generationKey)) return;
   if (chat[Number(mesId)] !== message) {
@@ -445,9 +518,10 @@ async function generateFromSummary(mesId, message, prompt, aspectRatio) {
     message.extra ||= {};
     message.extra.sceneDrawPrompt = prompt;
     message.extra.sceneDrawAspectRatio = aspectRatio;
+    if (loraControls) message.extra.sceneDrawLoraControls = { ...loraControls };
     setWorkflowState(mesId, message, "submitting", "已确认场景总结，正在提交工作流");
     await saveChatConditional();
-    const image = await generateImage(prompt, (step, detail) => setWorkflowState(mesId, message, step, detail), imageSize);
+    const image = await generateImage(prompt, (step, detail) => setWorkflowState(mesId, message, step, detail), imageSize, loraControls);
     setWorkflowState(mesId, message, "generating", "图片已生成，正在保存到酒馆");
     const savedImage = await persistImage(image);
     message.extra.sceneDrawImage = savedImage;
@@ -547,6 +621,41 @@ function showSummaryModal(mesId) {
   ratios.setAttribute("role", "radiogroup");
   ratios.setAttribute("aria-label", "图片比例（必选）");
   ratios.setAttribute("aria-required", "true");
+  const loraState = loraControlState();
+  const loraControls = { character: loraState.character, zoom: loraState.zoomSupported ? loraState.zoom : null };
+  const sliders = document.createElement("div");
+  sliders.className = "scene-draw-lora-sliders";
+  const addSlider = (name, min, max, step, value, disabled, onInput, displayValue) => {
+    const field = document.createElement("label");
+    field.className = "scene-draw-lora-slider";
+    const output = document.createElement("span");
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = String(min); slider.max = String(max); slider.step = String(step); slider.value = String(value);
+    slider.disabled = disabled;
+    slider.setAttribute("aria-label", name);
+    const update = () => {
+      output.textContent = displayValue(Number(slider.value));
+      slider.setAttribute("aria-valuetext", output.textContent);
+    };
+    slider.addEventListener("input", () => { onInput(Number(slider.value)); update(); });
+    update();
+    field.append(output, slider);
+    sliders.append(field);
+  };
+  addSlider("角色 LoRA", 0, Math.max(1, loraState.characters.length - 1), 1, Math.max(0, loraState.characters.findIndex(item => item.name === loraState.character)), loraState.characters.length < 2, index => {
+    const character = loraState.characters[index];
+    if (!character) return;
+    loraControls.character = character.name;
+    settings().lastCharacterLora = character.name;
+    save();
+  }, index => loraState.characters[index]?.label || "角色");
+  addSlider("zoom LoRA", -12, 0, .5, loraState.zoom, !loraState.zoomSupported, value => {
+    if (!loraState.zoomSupported) return;
+    loraControls.zoom = zoomLoraValue(value);
+    settings().lastZoomLora = loraControls.zoom;
+    save();
+  }, value => "zoom " + value.toFixed(1));
   let firstRadio;
   let selectedRadio;
   [["竖版", "9:16", "3:4"], ["横版", "16:9", "4:3"], ["", "1:1"]].forEach(([heading, ...options]) => {
@@ -600,9 +709,12 @@ function showSummaryModal(mesId) {
       return;
     }
     modal.remove();
-    generateFromSummary(mesId, message, editedPrompt, selectedRatio);
+    generateFromSummary(mesId, message, editedPrompt, selectedRatio, { ...loraControls });
   });
-  actions.append(ratios, confirm);
+  const submitControls = document.createElement("div");
+  submitControls.className = "scene-draw-summary-submit-controls";
+  submitControls.append(confirm, sliders);
+  actions.append(ratios, submitControls);
   panel.append(title, content, actions);
   modal.append(panel);
   modal.addEventListener("click", (event) => {
@@ -862,7 +974,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.2.4" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.0" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
