@@ -22,7 +22,8 @@ const requests = [];
 const context = vm.createContext({
   settings: () => conf,
   clientId: 'test-client', watchComfyProgress: () => () => {},
-  chat: [message], runningGenerations: new Set(),
+  URL, comfyProgressUrl: id => 'ws://test:8188/ws?clientId=' + id,
+  chat: [message], runningGenerations: new Set(), imageGenerations: new WeakMap(),
   debug: () => {}, notify: () => {}, console,
   saveChatConditional: async () => {},
   generateProxy: async workflow => { requests.push({ route: 'proxy', workflow }); return 'image'; },

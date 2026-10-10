@@ -350,6 +350,50 @@ function watchComfyProgress(workflow, requestClientId, onProgress) {
   }
   return stop;
 }
+async function cancelImageGeneration(mesId) {
+  const message = chat[Number(mesId)];
+  const job = message && imageGenerations.get(message);
+  if (!job?.clientId || job.finished || job.cancelling) return;
+  job.cancelling = true;
+  renderSidebar();
+  const lookupDeadline = Date.now() + 5000;
+  try {
+    while (!job.finished) {
+      const response = await fetch(job.controlBase + "/queue", { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error("无法连接 ComfyUI 中断接口（" + response.status + "）。");
+      const queue = await response.json();
+      if (job.finished) return;
+      const owns = item => item[3]?.client_id === job.clientId;
+      const running = queue.queue_running?.find(owns);
+      if (running) {
+        // Keep the Tavern proxy request alive: disconnecting it can cause a global interrupt.
+        job.interruptPromise = (async () => {
+          const result = await fetch(job.controlBase + "/api/jobs/" + encodeURIComponent(running[1]) + "/cancel", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", signal: AbortSignal.timeout(5000)
+          });
+          if (result.status === 404 || result.status === 405) throw new Error("ComfyUI 不支持按任务中断，请更新 ComfyUI。");
+          if (!result.ok) throw new Error("中断请求失败（" + result.status + "）。");
+          const data = await result.json();
+          job.cancelled = data.cancelled === true;
+          debug("ComfyUI 中断响应", { promptId: running[1], cancelled: job.cancelled });
+        })();
+        await job.interruptPromise;
+        return;
+      }
+      const pending = queue.queue_pending?.some(owns);
+      // Dequeuing would leave Tavern's history-polling proxy waiting forever.
+      // Instead, interrupt this job as soon as it starts, without touching jobs ahead of it.
+      if (!pending && Date.now() >= lookupDeadline) return;
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  } catch (error) {
+    console.warn(logPrefix + " 中断图片生成失败", error);
+    if (!job.finished) notify("error", error.message || String(error));
+  } finally {
+    if (!job.cancelled) job.cancelling = false;
+    renderSidebar();
+  }
+}
 async function generateDirect(workflow, onProgress, requestClientId = clientId) {
   const base = settings().comfyUrl.replace(/\/$/, "");
   debug("直连提交 ComfyUI 工作流", { url: base, nodeCount: Object.keys(workflow).length });
@@ -387,16 +431,26 @@ async function generateProxy(workflow, onProgress, requestClientId = clientId) {
   if (!data.data) throw new Error(data.error?.message || "酒馆代理没有返回图片数据。");
   return "data:image/" + (data.format || "png") + ";base64," + data.data;
 }
-async function generateImage(prompt, onProgress, imageSize, loraControls) {
+async function generateImage(prompt, onProgress, imageSize, loraControls, job) {
   if (!settings().comfyUrl) throw new Error("请先填写 ComfyUI 地址。");
   debug("开始 ComfyUI 生图", { viaProxy: settings().useComfyProxy, promptLength: prompt.length });
   onProgress?.("submitting", "正在整理工作流并提交给 ComfyUI");
   const workflow = workflowWithPrompt(prompt, imageSize, loraControls);
   const requestClientId = clientId + "-" + Math.random().toString(36).slice(2);
+  if (job) {
+    job.clientId = requestClientId;
+    const controlUrl = new URL(comfyProgressUrl(requestClientId));
+    controlUrl.protocol = controlUrl.protocol === "wss:" ? "https:" : "http:";
+    controlUrl.pathname = controlUrl.pathname.replace(/\/ws$/, "");
+    controlUrl.search = "";
+    job.controlBase = controlUrl.href.replace(/\/$/, "");
+    renderSidebar();
+  }
   const stopProgress = watchComfyProgress(workflow, requestClientId, onProgress);
   try {
     return await (settings().useComfyProxy ? generateProxy(workflow, onProgress, requestClientId) : generateDirect(workflow, onProgress, requestClientId));
   } finally {
+    if (job) job.finished = true;
     stopProgress();
   }
 }
@@ -408,6 +462,7 @@ const workflowSteps = [
 let activeMessageId = null;
 let sidebarTrackingBound = false;
 const runningGenerations = new Set();
+const imageGenerations = new WeakMap();
 
 function isAiMessage(mesId) {
   const message = chat[Number(mesId)];
@@ -434,7 +489,7 @@ function workflowWidget(mesId, state) {
       else if (summaryReady) item.classList.add("done");
     } else if (state.step === "failed") item.classList.add("failed");
     else if (state.step === "completed") item.classList.add("done");
-    else if (summaryReady) item.classList.add("active");
+    else if (summaryReady && state.step !== "cancelled") item.classList.add("active");
     const marker = document.createElement("span");
     marker.className = "scene-draw-workflow-marker";
     marker.textContent = item.classList.contains("done") ? "✓" : String(index + 1);
@@ -506,6 +561,17 @@ function sidebarGenerateControl(mesId, message, isBusy) {
   }
   return button;
 }
+function sidebarStopControl(mesId, job) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "scene-draw-sidebar-stop";
+  button.dataset.sceneDrawMesid = String(mesId);
+  button.disabled = !job.clientId || Boolean(job.cancelling);
+  button.setAttribute("aria-label", job.cancelling ? "正在中断本次生图" : "中断本次生图");
+  button.setAttribute("aria-busy", String(Boolean(job.cancelling)));
+  button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>';
+  return button;
+}
 function renderSidebar() {
   const sidebar = ensureSidebar();
   const message = activeMessageId === null ? null : chat[Number(activeMessageId)];
@@ -518,6 +584,8 @@ function renderSidebar() {
   const isBusy = runningGenerations.has(String(activeMessageId));
   const button = sidebarGenerateControl(activeMessageId, message, isBusy);
   sidebar.replaceChildren(button);
+  const job = imageGenerations.get(message);
+  if (isBusy && job && !job.finished) sidebar.append(sidebarStopControl(activeMessageId, job));
   if (message.extra?.sceneDrawState) sidebar.append(workflowWidget(activeMessageId, message.extra.sceneDrawState));
 }
 function updateActiveMessage() {
@@ -602,6 +670,8 @@ async function generateFromSummary(mesId, message, prompt, aspectRatio, loraCont
     return;
   }
   runningGenerations.add(generationKey);
+  const job = {};
+  imageGenerations.set(message, job);
   try {
     message.extra ||= {};
     message.extra.sceneDrawPrompt = prompt;
@@ -609,7 +679,10 @@ async function generateFromSummary(mesId, message, prompt, aspectRatio, loraCont
     if (loraControls) message.extra.sceneDrawLoraControls = { ...loraControls };
     setWorkflowState(mesId, message, "submitting", "已确认场景总结，正在提交工作流");
     await saveChatConditional();
-    const image = await generateImage(prompt, (step, detail, progress) => setWorkflowState(mesId, message, step, detail, progress), imageSize, loraControls);
+    const image = await generateImage(prompt, (step, detail, progress) => setWorkflowState(mesId, message, step, detail, progress), imageSize, loraControls, job);
+    if (job.interruptPromise) await job.interruptPromise.catch(() => {});
+    if (job.cancelled) throw new Error("本次生图已中断。");
+    imageGenerations.delete(message);
     setWorkflowState(mesId, message, "generating", "图片已生成，正在保存到酒馆");
     const savedImage = await persistImage(image);
     message.extra.sceneDrawImage = savedImage;
@@ -618,11 +691,17 @@ async function generateFromSummary(mesId, message, prompt, aspectRatio, loraCont
     await saveChatConditional();
     notify("success", "图片已生成。");
   } catch (error) {
-    console.error(logPrefix + " 生成图片失败", error);
-    setWorkflowState(mesId, message, "failed", error.message || String(error));
+    if (job.interruptPromise) await job.interruptPromise.catch(() => {});
+    if (job.cancelled) setWorkflowState(mesId, message, "cancelled", "本次生图已中断。");
+    else {
+      console.error(logPrefix + " 生成图片失败", error);
+      setWorkflowState(mesId, message, "failed", error.message || String(error));
+    }
     try { await saveChatConditional(); } catch (saveError) { console.warn(logPrefix + " 保存失败状态时出错", saveError); }
-    notify("error", error.message || String(error));
+    notify(job.cancelled ? "info" : "error", job.cancelled ? "本次生图已中断。" : error.message || String(error));
   } finally {
+    job.finished = true;
+    imageGenerations.delete(message);
     runningGenerations.delete(generationKey);
     renderSidebar();
   }
@@ -899,6 +978,13 @@ function bindGenerationClickHandler() {
       showImageViewer(image.currentSrc || image.src, image.alt);
       return;
     }
+    const stopButton = event.target instanceof Element ? event.target.closest(".scene-draw-sidebar-stop") : null;
+    if (stopButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!stopButton.disabled) void cancelImageGeneration(stopButton.dataset.sceneDrawMesid);
+      return;
+    }
     const summaryButton = event.target instanceof Element ? event.target.closest(".scene-draw-workflow-summary") : null;
     if (summaryButton) {
       event.preventDefault();
@@ -1062,7 +1148,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.3" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.4" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);

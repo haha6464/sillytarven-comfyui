@@ -15,7 +15,7 @@ const messageFor = (step) => ({ extra: { sceneDrawState: { step, detail: '测试
 // Temporary DOM-only preview on the user's page. No API calls or chat writes.
 if (process.argv[2] === '--preview') {
   const step = process.argv[3] === 'sampling' ? 'generating' : process.argv[3] || 'completed';
-  assert(['idle', 'reviewing', 'completed', 'failed', ...busySteps].includes(step));
+  assert(['idle', 'reviewing', 'completed', 'failed', 'cancelled', ...busySteps].includes(step));
   console.log(`(() => {
     const sidebar = document.querySelector('#scene-draw-sidebar');
     if (!sidebar) throw new Error('Sidebar is not visible');
@@ -33,6 +33,7 @@ if (process.argv[2] === '--preview') {
     ${controls}
     ${workflow}
     sidebar.replaceChildren(sidebarGenerateControl(mesId, message, ${busySteps.includes(step)}));
+    if (${JSON.stringify(process.argv[3])} === 'sampling') sidebar.append(sidebarStopControl('-1', { clientId: 'preview-only' }));
     if (${JSON.stringify(step)} !== 'idle') {
       const widget = workflowWidget(0, message.extra.sceneDrawState);
       widget.querySelectorAll('[data-scene-draw-mesid]').forEach(node => node.dataset.sceneDrawMesid = mesId);
@@ -80,6 +81,18 @@ for (const step of ['idle', 'reviewing', 'completed', 'failed', ...busySteps]) {
 }
 assert.equal(context.sidebarPresentation(messageFor('completed'), true).state, 'busy', 'Runtime lock wins while saving');
 assert.equal(context.sidebarPresentation(messageFor('generating'), false).state, 'idle', 'Stale persisted state cannot spin');
+const stopButton = context.sidebarStopControl('48', { clientId: 'own-job' });
+assert.equal(stopButton.disabled, false);
+assert.equal(stopButton.dataset.sceneDrawMesid, '48');
+assert.equal(stopButton.attributes['aria-label'], '中断本次生图');
+assert(stopButton.innerHTML.includes('<svg'));
+assert.equal(stopButton.title, undefined, 'No explanatory tooltip or visible text');
+assert.equal(context.sidebarStopControl('48', {}).disabled, true, 'Wait until submission has a client ID');
+assert.equal(context.sidebarStopControl('48', { clientId: 'own-job', cancelling: true }).disabled, true, 'Prevent duplicate interruption');
+context.chat[0] = messageFor('cancelled');
+const cancelledWidget = context.workflowWidget(0, context.chat[0].extra.sceneDrawState);
+assert(!cancelledWidget.children[0].children[1].classList.contains('active'), 'Cancelled generation is not displayed as running');
+assert(!cancelledWidget.children[0].children[1].classList.contains('done'), 'Cancelled generation is not displayed as completed');
 const samplingMessage = messageFor('generating');
 samplingMessage.extra.sceneDrawState.progress = { value: 3, max: 9 };
 const samplingButton = context.sidebarGenerateControl('48', samplingMessage, true);
