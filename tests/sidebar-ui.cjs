@@ -14,17 +14,20 @@ const messageFor = (step) => ({ extra: { sceneDrawState: { step, detail: '测试
 
 // Temporary DOM-only preview on the user's page. No API calls or chat writes.
 if (process.argv[2] === '--preview') {
-  const step = process.argv[3] || 'completed';
+  const step = process.argv[3] === 'sampling' ? 'generating' : process.argv[3] || 'completed';
   assert(['idle', 'reviewing', 'completed', 'failed', ...busySteps].includes(step));
   console.log(`(() => {
     const sidebar = document.querySelector('#scene-draw-sidebar');
     if (!sidebar) throw new Error('Sidebar is not visible');
     window.__sceneDrawUiOriginal ||= sidebar.innerHTML;
-    const mesId = sidebar.querySelector('button').dataset.sceneDrawMesid;
+    window.__sceneDrawUiOriginalHidden ??= sidebar.hidden;
+    const mesId = sidebar.querySelector('button')?.dataset.sceneDrawMesid || '0';
+    sidebar.hidden = false;
     let style = document.querySelector('#scene-draw-ui-preview-style');
     if (!style) { style = document.createElement('style'); style.id = 'scene-draw-ui-preview-style'; document.head.append(style); }
     style.textContent = ${JSON.stringify(css)};
     const message = ${JSON.stringify(messageFor(step))};
+    if (${JSON.stringify(process.argv[3])} === 'sampling') message.extra.sceneDrawState.progress = { value: 3, max: 9 };
     const chat = [message];
     const workflowSteps = ${JSON.stringify(steps)};
     ${controls}
@@ -42,7 +45,7 @@ if (process.argv[2] === '--preview') {
   process.exit(0);
 }
 if (process.argv[2] === '--restore') {
-  console.log(`(() => { const sidebar = document.querySelector('#scene-draw-sidebar'); if (sidebar && window.__sceneDrawUiOriginal) sidebar.innerHTML = window.__sceneDrawUiOriginal; document.querySelector('#scene-draw-ui-preview-style')?.remove(); delete window.__sceneDrawUiOriginal; return 'Preview restored'; })()`);
+  console.log(`(() => { const sidebar = document.querySelector('#scene-draw-sidebar'); if (sidebar && window.__sceneDrawUiOriginal !== undefined) { sidebar.innerHTML = window.__sceneDrawUiOriginal; if (window.__sceneDrawUiOriginalHidden !== undefined) sidebar.hidden = window.__sceneDrawUiOriginalHidden; } document.querySelector('#scene-draw-ui-preview-style')?.remove(); delete window.__sceneDrawUiOriginal; delete window.__sceneDrawUiOriginalHidden; return 'Preview restored'; })()`);
   process.exit(0);
 }
 
@@ -77,6 +80,21 @@ for (const step of ['idle', 'reviewing', 'completed', 'failed', ...busySteps]) {
 }
 assert.equal(context.sidebarPresentation(messageFor('completed'), true).state, 'busy', 'Runtime lock wins while saving');
 assert.equal(context.sidebarPresentation(messageFor('generating'), false).state, 'idle', 'Stale persisted state cannot spin');
+const samplingMessage = messageFor('generating');
+samplingMessage.extra.sceneDrawState.progress = { value: 3, max: 9 };
+const samplingButton = context.sidebarGenerateControl('48', samplingMessage, true);
+assert.equal(samplingButton.innerHTML, '', 'Real steps replace the image glyph, with no extra badge');
+assert.equal(samplingButton.children.length, 1);
+assert.equal(samplingButton.children[0].textContent, '3/9');
+assert.equal(samplingButton.children[0].attributes['aria-valuenow'], '3');
+assert.equal(samplingButton.children[0].attributes['aria-valuemax'], '9');
+assert.equal(samplingButton.children[0].dataset.compact, 'false');
+assert(samplingButton.attributes['aria-label'].includes('3/9'));
+assert.equal(context.sidebarGenerateControl('48', samplingMessage, false).children.length, 0, 'Reloaded/stale progress is not shown');
+samplingMessage.extra.sceneDrawState.progress = { value: 100, max: 100 };
+assert.equal(context.sidebarGenerateControl('48', samplingMessage, true).children[0].dataset.compact, 'true');
+samplingMessage.extra.sceneDrawState.step = 'completed';
+assert(context.sidebarGenerateControl('48', samplingMessage, true).innerHTML.includes('<svg'), 'Saving must not retain a step counter');
 assert(css.includes('appearance: none'));
 assert(css.includes('border: 0'));
 assert(css.includes('prefers-reduced-motion'));

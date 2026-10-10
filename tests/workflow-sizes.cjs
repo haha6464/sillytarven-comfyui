@@ -20,6 +20,7 @@ const message = { extra: {} };
 const requests = [];
 const context = vm.createContext({
   settings: () => conf,
+  clientId: 'test-client', watchComfyProgress: () => () => {},
   chat: [message], runningGenerations: new Set(),
   debug: () => {}, notify: () => {}, console,
   saveChatConditional: async () => {},

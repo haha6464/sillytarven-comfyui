@@ -281,10 +281,77 @@ async function persistImage(imageDataUrl) {
   return data.path;
 }
 
-async function generateDirect(workflow, onProgress) {
+function comfyProgressUrl(requestClientId) {
+  const conf = settings();
+  const url = new URL(conf.comfyUrl);
+  const isLoopback = hostname => ["localhost", "127.0.0.1", "[::1]"].includes(hostname);
+  // A proxy's loopback address belongs to the Tavern server, not the phone.
+  if (conf.useComfyProxy && isLoopback(url.hostname) && !isLoopback(window.location.hostname)) url.hostname = window.location.hostname;
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = url.pathname.replace(/\/$/, "") + "/ws";
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("clientId", requestClientId);
+  return url.href;
+}
+function watchComfyProgress(workflow, requestClientId, onProgress) {
+  let socket, connectTimeout, stopped = false, promptId, currentNode, lastProgress = "";
+  const samplerNodes = new Set(Object.entries(workflow).filter(([, node]) => /sampler/i.test(node.class_type)).map(([id]) => id));
+  const report = progress => {
+    const key = progress ? progress.value + "/" + progress.max : "";
+    if (key === lastProgress) return;
+    lastProgress = key;
+    onProgress?.("generating", "正在生成图片", progress);
+  };
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(connectTimeout);
+    if (socket) {
+      socket.onopen = socket.onmessage = socket.onerror = socket.onclose = null;
+      socket.close();
+    }
+    report();
+  };
+  try {
+    socket = new WebSocket(comfyProgressUrl(requestClientId));
+    connectTimeout = setTimeout(stop, 5000);
+    socket.onopen = () => clearTimeout(connectTimeout);
+    socket.onerror = () => {
+      debug("ComfyUI 实时进度连接不可用，生图继续");
+      stop();
+    };
+    socket.onclose = stop;
+    socket.onmessage = event => {
+      if (stopped || typeof event.data !== "string") return;
+      let packet;
+      try { packet = JSON.parse(event.data); } catch { return; }
+      const data = packet?.data;
+      if (!data || typeof data !== "object") return;
+      if (promptId && data.prompt_id && data.prompt_id !== promptId) return;
+      if (["execution_start", "executing", "progress"].includes(packet.type) && data.prompt_id) promptId ||= data.prompt_id;
+      if (packet.type === "executing") {
+        currentNode = data.node;
+        report();
+        if (currentNode === null) stop();
+      } else if (packet.type === "progress") {
+        const node = data.node ?? currentNode;
+        if (samplerNodes.size && !samplerNodes.has(String(node))) return;
+        const { value, max } = data;
+        if (!Number.isInteger(value) || !Number.isInteger(max) || max <= 0 || value < 0 || value > max) return;
+        report({ value, max });
+      } else if (["execution_success", "execution_error", "execution_interrupted"].includes(packet.type)) stop();
+    };
+  } catch (error) {
+    debug("ComfyUI 实时进度不可用，生图继续", { reason: error.message });
+    stop();
+  }
+  return stop;
+}
+async function generateDirect(workflow, onProgress, requestClientId = clientId) {
   const base = settings().comfyUrl.replace(/\/$/, "");
   debug("直连提交 ComfyUI 工作流", { url: base, nodeCount: Object.keys(workflow).length });
-  const response = await fetch(base + "/prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_id: clientId, prompt: workflow }) });
+  const response = await fetch(base + "/prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_id: requestClientId, prompt: workflow }) });
   const queued = await response.json().catch(() => ({}));
   if (!response.ok || !queued.prompt_id) throw new Error(queued.error?.message || "ComfyUI 提交失败（" + response.status + "）");
   debug("ComfyUI 已接收工作流", { promptId: queued.prompt_id });
@@ -306,10 +373,10 @@ async function generateDirect(workflow, onProgress) {
   }
   throw new Error("等待 ComfyUI 图片超时（10 分钟）。");
 }
-async function generateProxy(workflow, onProgress) {
+async function generateProxy(workflow, onProgress, requestClientId = clientId) {
   onProgress?.("generating", "任务已交给酒馆代理，正在等待 ComfyUI 完成");
   debug("通过酒馆代理提交 ComfyUI 工作流", { url: settings().comfyUrl, nodeCount: Object.keys(workflow).length });
-  const response = await fetch("/api/sd/comfy/generate", { method: "POST", headers: headers(), body: JSON.stringify({ url: settings().comfyUrl, prompt: JSON.stringify({ client_id: clientId, prompt: workflow }) }) });
+  const response = await fetch("/api/sd/comfy/generate", { method: "POST", headers: headers(), body: JSON.stringify({ url: settings().comfyUrl, prompt: JSON.stringify({ client_id: requestClientId, prompt: workflow }) }) });
   debug("酒馆代理 ComfyUI 响应", { status: response.status, ok: response.ok });
   const raw = await response.text();
   if (!response.ok) throw new Error(raw || "ComfyUI 代理请求失败（" + response.status + "）");
@@ -323,7 +390,13 @@ async function generateImage(prompt, onProgress, imageSize, loraControls) {
   debug("开始 ComfyUI 生图", { viaProxy: settings().useComfyProxy, promptLength: prompt.length });
   onProgress?.("submitting", "正在整理工作流并提交给 ComfyUI");
   const workflow = workflowWithPrompt(prompt, imageSize, loraControls);
-  return settings().useComfyProxy ? generateProxy(workflow, onProgress) : generateDirect(workflow, onProgress);
+  const requestClientId = clientId + "-" + Math.random().toString(36).slice(2);
+  const stopProgress = watchComfyProgress(workflow, requestClientId, onProgress);
+  try {
+    return await (settings().useComfyProxy ? generateProxy(workflow, onProgress, requestClientId) : generateDirect(workflow, onProgress, requestClientId));
+  } finally {
+    stopProgress();
+  }
 }
 
 const workflowSteps = [
@@ -390,7 +463,8 @@ function sidebarPresentation(message, isBusy) {
   const step = message.extra?.sceneDrawState?.step;
   if (isBusy) {
     const stage = step === "summarizing" ? "正在总结场景" : step === "submitting" ? "正在提交工作流" : step === "completed" ? "正在保存聊天" : "正在生成图片";
-    return { state: "busy", name: stage, badge: "" };
+    const progress = step === "generating" ? message.extra?.sceneDrawState?.progress : null;
+    return { state: "busy", name: progress ? stage + " " + progress.value + "/" + progress.max + " 步" : stage, badge: "", progress };
   }
   if (step === "reviewing" && message.extra?.sceneDrawPrompt) return { state: "review", name: "确认场景总结", badge: "✎" };
   if (step === "completed") return { state: "completed", name: "重新生成图片", badge: "✓" };
@@ -407,9 +481,20 @@ function sidebarGenerateControl(mesId, message, isBusy) {
   button.disabled = isBusy;
   button.setAttribute("aria-label", presentation.name);
   button.setAttribute("aria-busy", String(isBusy));
-  // Keep the image glyph stable; stage feedback is separate from the action icon.
   button.innerHTML = '<svg class="scene-draw-generate-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><circle cx="8" cy="10" r="1"/><path d="m4 18 5-5 4 4 3-3 4 4M17 2v6M14 5h6"/></svg>';
-  if (isBusy || presentation.badge) {
+  if (presentation.progress) {
+    button.innerHTML = "";
+    const progress = document.createElement("span");
+    progress.className = "scene-draw-generate-progress";
+    progress.textContent = presentation.progress.value + "/" + presentation.progress.max;
+    progress.dataset.compact = String(progress.textContent.length > 5);
+    progress.setAttribute("role", "progressbar");
+    progress.setAttribute("aria-label", "采样步数");
+    progress.setAttribute("aria-valuemin", "0");
+    progress.setAttribute("aria-valuenow", String(presentation.progress.value));
+    progress.setAttribute("aria-valuemax", String(presentation.progress.max));
+    button.append(progress);
+  } else if (isBusy || presentation.badge) {
     const badge = document.createElement("span");
     badge.className = "scene-draw-generate-badge";
     badge.setAttribute("aria-hidden", "true");
@@ -454,9 +539,10 @@ function bindSidebarTracking() {
 function renderWorkflowState() {
   renderSidebar();
 }
-function setWorkflowState(mesId, message, step, detail) {
+function setWorkflowState(mesId, message, step, detail, progress) {
   message.extra ||= {};
   message.extra.sceneDrawState = { step, detail };
+  if (progress) message.extra.sceneDrawState.progress = progress;
   debug("状态更新", { mesId: Number(mesId), step, detail });
   renderWorkflowState();
 }
@@ -521,7 +607,7 @@ async function generateFromSummary(mesId, message, prompt, aspectRatio, loraCont
     if (loraControls) message.extra.sceneDrawLoraControls = { ...loraControls };
     setWorkflowState(mesId, message, "submitting", "已确认场景总结，正在提交工作流");
     await saveChatConditional();
-    const image = await generateImage(prompt, (step, detail) => setWorkflowState(mesId, message, step, detail), imageSize, loraControls);
+    const image = await generateImage(prompt, (step, detail, progress) => setWorkflowState(mesId, message, step, detail, progress), imageSize, loraControls);
     setWorkflowState(mesId, message, "generating", "图片已生成，正在保存到酒馆");
     const savedImage = await persistImage(image);
     message.extra.sceneDrawImage = savedImage;
@@ -974,7 +1060,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.1" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.2" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
