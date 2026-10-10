@@ -11,11 +11,12 @@ const defaultWorkflow = vm.runInNewContext(source.slice(source.indexOf('const de
 const template = {
   '3': defaultWorkflow['3'],
   '5': { inputs: { text: '{{prompt}}' } },
+  '9': { class_type: 'Seed (rgthree)', inputs: { seed: '{{seed}}' } },
   '13': { inputs: { width: '{{width}}', height: '{{height}}', batch_size: 1 } },
   '20': { inputs: { width: 1024, height: 1024 } },
   '21': { inputs: { width: ['22', 0], height: ['22', 1] } },
 };
-const conf = { enabled: true, comfyUrl: 'test', workflow: JSON.stringify(template), positiveNodeId: '5', positiveInputName: 'text', width: 512, height: 768 };
+const conf = { enabled: true, comfyUrl: 'test', workflow: JSON.stringify(template), positiveNodeId: '5', positiveInputName: 'text', width: 512, height: 768, seed: -1 };
 const message = { extra: {} };
 const requests = [];
 const context = vm.createContext({
@@ -44,6 +45,7 @@ vm.runInContext(variables + workflowCode + imageCode + generationCode, context);
         assert.equal(request.workflow[nodeId].inputs.height, height);
       }
       assert.equal(request.workflow['5'].inputs.text, 'edited scene');
+      assert(Number.isSafeInteger(request.workflow['9'].inputs.seed) && request.workflow['9'].inputs.seed >= 0, 'Both proxy and direct transports receive a resolved random seed');
       const loras = request.workflow['3'].inputs.loras.__value__;
       assert.equal(loras.find(entry => entry.name === controls.character).active, true);
       assert.equal(loras.find(entry => entry.name === 'LiRuinan_v2').active, false);
@@ -58,6 +60,7 @@ vm.runInContext(variables + workflowCode + imageCode + generationCode, context);
   }
   assert.equal(conf.width, 512, 'Global settings are not modified');
   assert.equal(conf.height, 768);
+  assert.equal(conf.seed, -1, 'Random mode remains enabled after generation');
   assert.equal(conf.workflow, JSON.stringify(template), 'Workflow template is not modified');
   const count = requests.length;
   await context.generateFromSummary(0, message, 'scene');

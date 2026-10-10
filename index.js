@@ -40,7 +40,7 @@ const defaults = {
   llmBaseUrl: "", llmApiKey: "", llmModel: "", llmUseProxy: true, llmTemperature: 0.3,
   modelName: "krea2_turbo_fp8_scaled.safetensors", clipName: "qwen3VLInstruct4bHeretic_int8Convrot.safetensors", vaeName: "qwen_image_vae.safetensors",
   negativePrompt: "马赛克, mosaic, censored, 模糊，低分辨率，低质量图像，扭曲的肢体，诡异的外观，丑陋，噪点，网格感，JPEG压缩条纹，异常的肢体，水印，乱码，意义不明的字符",
-  width: 1024, height: 1024, batchSize: 1, seed: 31982231011750, steps: 8, cfg: 1, samplerName: "er_sde", scheduler: "simple", denoise: 1,
+  width: 1024, height: 1024, batchSize: 1, seed: -1, steps: 8, cfg: 1, samplerName: "er_sde", scheduler: "simple", denoise: 1,
   summaryPrompt: "你是绘图提示词整理助手。只根据下面这一条 AI 回复提炼画面场景，保留人物、动作、服饰、环境、镜头和光线；输出适合 ComfyUI 的简洁正向提示词。不要解释、不要加引号、不要虚构未出现的细节。\n\nAI 本轮回复：\n{{message}}"
 };
 
@@ -133,6 +133,8 @@ function applyLoraControls(workflow, controls) {
 }
 function workflowVariables(prompt, imageSize) {
   const conf = settings();
+  // Resolve once per workflow, within both rgthree's range and JS safe integers.
+  const seed = Number(conf.seed) === -1 ? Math.floor(Math.random() * 2 ** 50) : conf.seed;
   return {
     prompt,
     modelName: conf.modelName,
@@ -142,7 +144,7 @@ function workflowVariables(prompt, imageSize) {
     width: imageSize?.width ?? conf.width,
     height: imageSize?.height ?? conf.height,
     batchSize: conf.batchSize,
-    seed: conf.seed,
+    seed,
     steps: conf.steps,
     cfg: conf.cfg,
     samplerName: conf.samplerName,
@@ -1038,7 +1040,7 @@ function addSettings() {
     settingField("宽度（{{width}}）", inputFor("width", "number")),
     settingField("高度（{{height}}）", inputFor("height", "number")),
     settingField("批次数（{{batchSize}}）", inputFor("batchSize", "number")),
-    settingField("种子（{{seed}}）", inputFor("seed", "number")),
+    settingField("种子（-1 随机；{{seed}}）", inputFor("seed", "number")),
     settingField("步数（{{steps}}）", inputFor("steps", "number")),
     settingField("CFG（{{cfg}}）", inputFor("cfg", "number")),
     settingField("采样器（{{samplerName}}）", inputFor("samplerName")),
@@ -1060,7 +1062,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.2" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.3" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
