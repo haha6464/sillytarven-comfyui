@@ -92,7 +92,7 @@ function zoomLoraValue(value) {
 function penisSizeLoraValue(value) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
-  return Number.isFinite(number) ? Math.max(-5, Math.min(5, Math.round(number * 2) / 2)) : null;
+  return Number.isFinite(number) ? Math.max(-8, Math.min(5, Math.round(number * 2) / 2)) : null;
 }
 function loraManagerInputs(workflow) {
   return Object.values(workflow).filter(node => node?.class_type === "Lora Loader (LoraManager)" && Array.isArray(node.inputs?.loras?.__value__)).map(node => node.inputs);
@@ -831,7 +831,7 @@ function showSummaryModal(mesId) {
     settings().lastCharacterLora = character.name;
     save();
   }, index => loraState.characters[index]?.label || "角色");
-  addSlider("penis_size LoRA", -5, 5, .5, loraState.penisSize, !loraState.penisSizeSupported, value => {
+  addSlider("penis_size LoRA", -8, 5, .5, loraState.penisSize, !loraState.penisSizeSupported, value => {
     if (!loraState.penisSizeSupported) return;
     loraControls.penisSize = penisSizeLoraValue(value);
     settings().lastPenisSizeLora = loraControls.penisSize;
@@ -1168,7 +1168,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.5" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.6" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);

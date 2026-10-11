@@ -43,7 +43,7 @@ for (const character of names) {
 assert.equal(conf.workflow, JSON.stringify(original), 'Saved workflow stays unchanged');
 const sizeName = 'penis_size_krea2_v2_loraholic';
 for (const character of names) {
-  for (let penisSize = -5; penisSize <= 5; penisSize += .5) {
+  for (let penisSize = -8; penisSize <= 5; penisSize += .5) {
     const workflow = context.workflowWithPrompt('scene', null, { character, penisSize, zoom: -2.5 });
     const result = workflow['3'].inputs.loras.__value__;
     const entry = result.find(item => item.name === sizeName);
@@ -65,7 +65,7 @@ conf.lastPenisSizeLora = 3.5;
 assert.equal(context.loraControlState().penisSize, 3.5);
 conf.lastPenisSizeLora = 'invalid';
 assert.equal(context.loraControlState().penisSize, -1);
-assert.equal(context.penisSizeLoraValue(-99), -5);
+assert.equal(context.penisSizeLoraValue(-99), -8);
 assert.equal(context.penisSizeLoraValue(99), 5);
 assert.equal(context.penisSizeLoraValue(2.3), 2.5);
 for (const value of [null, undefined, '', NaN, Infinity, 'invalid']) assert.equal(context.penisSizeLoraValue(value), null);
@@ -101,4 +101,4 @@ assert.doesNotThrow(() => context.workflowWithPrompt('scene', null, { character:
 conf.workflow = '{}';
 assert.equal(context.loraControlState().characters.length, 0);
 assert.equal(context.loraControlState().zoomSupported, false);
-console.log('LoRA controls: 6 characters x 25 zoom values and 21 size values, synchronized text/entries, preserved other LoRAs, defaults, validation and memory passed.');
+console.log('LoRA controls: 6 characters x 25 zoom values and 27 size values, synchronized text/entries, preserved other LoRAs, defaults, validation and memory passed.');

@@ -92,7 +92,7 @@ assert.equal(ui.submitControls.children.filter(child => child.tag === 'button').
 assert.equal(ui.submit.type, 'button');
 assert.equal(ui.content.value, 'original scene');
 assert.equal(ui.sliders.length, 3);
-assert.deepEqual(ui.sliders.map(slider => [slider.min, slider.max, slider.step]), [['0', '5', '1'], ['-5', '5', '0.5'], ['0', '12', '0.5']]);
+assert.deepEqual(ui.sliders.map(slider => [slider.min, slider.max, slider.step]), [['0', '5', '1'], ['-8', '5', '0.5'], ['0', '12', '0.5']]);
 assert(ui.sliders.every(slider => !slider.disabled));
 assert.deepEqual(ui.sliderGroup.children.map(field => field.children[0].textContent), ['李蕊男', 'penis_size -1.0', 'zoom 0.0']);
 assert(ui.submit.disabled, 'Selection is mandatory with no default');
@@ -183,7 +183,7 @@ for (const position of [0, .5, 12]) {
   ui.submit.events.click();
   assert.equal(generated.at(-1)[4].zoom, expectedZoom, 'Submit uses the real negative zoom value');
 }
-for (let value = -5; value <= 5; value += .5) {
+for (let value = -8; value <= 5; value += .5) {
   ui = openModal();
   ui.sliders[1].value = String(value);
   ui.sliders[1].events.input();
