@@ -35,7 +35,7 @@ const defaultWorkflow = {
 
 const defaults = {
   enabled: true, sidebarSide: "right", lastAspectRatio: "", comfyUrl: "http://127.0.0.1:8188", useComfyProxy: true,
-  lastCharacterLora: "", lastZoomLora: null,
+  lastCharacterLora: "", lastPenisSizeLora: null, lastZoomLora: null,
   workflow: JSON.stringify(defaultWorkflow, null, 2), positiveNodeId: "5", positiveInputName: "text",
   llmBaseUrl: "", llmApiKey: "", llmModel: "", llmUseProxy: true, llmTemperature: 0.3,
   modelName: "krea2_turbo_fp8_scaled.safetensors", clipName: "qwen3VLInstruct4bHeretic_int8Convrot.safetensors", vaeName: "qwen_image_vae.safetensors",
@@ -80,6 +80,7 @@ const characterLoras = [
   { label: "周心怡", name: "ZhouXinyi_v1" }
 ];
 const zoomLoraName = "zoom_krea2_loraholic";
+const penisSizeLoraName = "penis_size_krea2_v2_loraholic";
 function loraName(name) {
   return String(name || "").split(/[\\/]/).pop().replace(/\.(safetensors|ckpt|pt)$/i, "");
 }
@@ -87,6 +88,11 @@ function zoomLoraValue(value) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(-12, Math.min(0, Math.round(number * 2) / 2)) : null;
+}
+function penisSizeLoraValue(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(-5, Math.min(5, Math.round(number * 2) / 2)) : null;
 }
 function loraManagerInputs(workflow) {
   return Object.values(workflow).filter(node => node?.class_type === "Lora Loader (LoraManager)" && Array.isArray(node.inputs?.loras?.__value__)).map(node => node.inputs);
@@ -99,34 +105,42 @@ function loraControlState() {
   const activeCharacter = entries.find(entry => entry.active && characters.some(character => character.name === loraName(entry.name)));
   const character = characters.find(item => item.name === conf.lastCharacterLora)?.name || loraName(activeCharacter?.name) || characters[0]?.name || null;
   const zoom = entries.find(entry => loraName(entry.name) === zoomLoraName);
-  return { characters, character, zoomSupported: Boolean(zoom), zoom: zoomLoraValue(conf.lastZoomLora) ?? zoomLoraValue(zoom?.strength) ?? 0 };
+  const penisSize = entries.find(entry => loraName(entry.name) === penisSizeLoraName);
+  return { characters, character, zoomSupported: Boolean(zoom), zoom: zoomLoraValue(conf.lastZoomLora) ?? zoomLoraValue(zoom?.strength) ?? 0,
+    penisSizeSupported: Boolean(penisSize), penisSize: penisSizeLoraValue(conf.lastPenisSizeLora) ?? penisSizeLoraValue(penisSize?.strength) ?? -1 };
 }
 function applyLoraControls(workflow, controls) {
-  if (!controls || (!controls.character && (controls.zoom === null || controls.zoom === undefined))) return;
+  if (!controls || (!controls.character && controls.zoom == null && controls.penisSize == null)) return;
   const inputsList = loraManagerInputs(workflow);
   const character = controls.character;
   const zoom = zoomLoraValue(controls.zoom);
+  const penisSize = penisSizeLoraValue(controls.penisSize);
   if (character && (!characterLoras.some(item => item.name === character) || !inputsList.some(inputs => inputs.loras.__value__.some(entry => loraName(entry.name) === character)))) throw new Error("工作流中找不到所选角色 LoRA。");
   if (controls.zoom !== null && controls.zoom !== undefined && (zoom === null || !inputsList.some(inputs => inputs.loras.__value__.some(entry => loraName(entry.name) === zoomLoraName)))) throw new Error("工作流中找不到 zoom LoRA 或参数无效。");
+  if (controls.penisSize != null && (penisSize === null || !inputsList.some(inputs => inputs.loras.__value__.some(entry => loraName(entry.name) === penisSizeLoraName)))) throw new Error("工作流中找不到 penis_size LoRA 或参数无效。");
+  const strengthControls = [[zoomLoraName, zoom], [penisSizeLoraName, penisSize]].filter(([, value]) => value !== null);
   for (const inputs of inputsList) {
     const entries = inputs.loras.__value__;
     for (const entry of entries) {
       const name = loraName(entry.name);
       if (character && characterLoras.some(item => item.name === name)) entry.active = name === character;
-      if (zoom !== null && name === zoomLoraName) {
+      const strengthControl = strengthControls.find(([target]) => name === target);
+      if (strengthControl) {
         entry.active = true;
-        entry.strength = zoom;
-        entry.clipStrength = zoom;
+        entry.strength = strengthControl[1];
+        entry.clipStrength = strengthControl[1];
       }
     }
     // Keep the textual representation in sync, without touching unrelated LoRA tags.
     if (typeof inputs.text !== "string") continue;
-    let text = inputs.text.replace(/<lora:([^:>]+):[^>]*>/g, (tag, name) => (character && characterLoras.some(item => item.name === loraName(name))) || (zoom !== null && loraName(name) === zoomLoraName) ? "" : tag);
+    let text = inputs.text.replace(/<lora:([^:>]+):[^>]*>/g, (tag, name) => (character && characterLoras.some(item => item.name === loraName(name))) || strengthControls.some(([target]) => loraName(name) === target) ? "" : tag);
     text = text.replace(/(?:,\s*){2,}/g, ", ").replace(/^\s*,\s*|\s*,\s*$/g, "").trim();
     const selected = entries.find(entry => loraName(entry.name) === character);
     const zoomEntry = entries.find(entry => loraName(entry.name) === zoomLoraName);
+    const penisSizeEntry = entries.find(entry => loraName(entry.name) === penisSizeLoraName);
     const tags = [text];
     if (selected) tags.push("<lora:" + selected.name + ":" + selected.strength + ":" + (selected.clipStrength ?? selected.strength) + ">");
+    if (penisSize !== null && penisSizeEntry) tags.push("<lora:" + penisSizeEntry.name + ":" + penisSize.toFixed(2) + ":" + penisSize.toFixed(2) + ">");
     if (zoom !== null && zoomEntry) tags.push("<lora:" + zoomEntry.name + ":" + zoom.toFixed(2) + ">");
     inputs.text = tags.filter(Boolean).join(", ");
   }
@@ -789,7 +803,7 @@ function showSummaryModal(mesId) {
   ratios.setAttribute("aria-label", "图片比例（必选）");
   ratios.setAttribute("aria-required", "true");
   const loraState = loraControlState();
-  const loraControls = { character: loraState.character, zoom: loraState.zoomSupported ? loraState.zoom : null };
+  const loraControls = { character: loraState.character, penisSize: loraState.penisSizeSupported ? loraState.penisSize : null, zoom: loraState.zoomSupported ? loraState.zoom : null };
   const sliders = document.createElement("div");
   sliders.className = "scene-draw-lora-sliders";
   const addSlider = (name, min, max, step, value, disabled, onInput, displayValue) => {
@@ -817,6 +831,12 @@ function showSummaryModal(mesId) {
     settings().lastCharacterLora = character.name;
     save();
   }, index => loraState.characters[index]?.label || "角色");
+  addSlider("penis_size LoRA", -5, 5, .5, loraState.penisSize, !loraState.penisSizeSupported, value => {
+    if (!loraState.penisSizeSupported) return;
+    loraControls.penisSize = penisSizeLoraValue(value);
+    settings().lastPenisSizeLora = loraControls.penisSize;
+    save();
+  }, value => "penis_size " + value.toFixed(1));
   addSlider("zoom LoRA", 0, 12, .5, -loraState.zoom, !loraState.zoomSupported, value => {
     if (!loraState.zoomSupported) return;
     loraControls.zoom = value === 0 ? 0 : zoomLoraValue(-value);
@@ -1148,7 +1168,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.4" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.5" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);

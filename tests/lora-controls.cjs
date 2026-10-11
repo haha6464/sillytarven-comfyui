@@ -19,6 +19,7 @@ assert.equal(entries.find(entry => entry.name.startsWith('breast_size')).strengt
 assert.equal(entries.find(entry => entry.name.startsWith('penis_size')).strength, '-1.00');
 assert.equal(context.loraControlState().character, names[0]);
 assert.equal(context.loraControlState().zoom, 0);
+assert.equal(context.loraControlState().penisSize, -1, 'Use workflow strength until the user chooses a value');
 for (const character of names) {
   for (let zoom = -12; zoom <= 0; zoom += .5) {
     const workflow = context.workflowWithPrompt('edited scene', { width: 1400, height: 1050 }, { character, zoom });
@@ -40,6 +41,41 @@ for (const character of names) {
   }
 }
 assert.equal(conf.workflow, JSON.stringify(original), 'Saved workflow stays unchanged');
+const sizeName = 'penis_size_krea2_v2_loraholic';
+for (const character of names) {
+  for (let penisSize = -5; penisSize <= 5; penisSize += .5) {
+    const workflow = context.workflowWithPrompt('scene', null, { character, penisSize, zoom: -2.5 });
+    const result = workflow['3'].inputs.loras.__value__;
+    const entry = result.find(item => item.name === sizeName);
+    assert.equal(entry.strength, penisSize);
+    assert.equal(entry.clipStrength, penisSize);
+    assert.equal(entry.active, true);
+    assert(workflow['3'].inputs.text.includes('<lora:' + sizeName + ':' + penisSize.toFixed(2) + ':' + penisSize.toFixed(2) + '>'));
+    assert.equal(workflow['3'].inputs.text.match(/<lora:penis_size_krea2_v2_loraholic:/g).length, 1);
+    assert.equal(result.find(item => item.name === 'zoom_krea2_loraholic').strength, -2.5);
+    for (const other of entries.filter(item => !names.includes(item.name) && ![sizeName, 'zoom_krea2_loraholic'].includes(item.name))) {
+      assert.equal(JSON.stringify(result.find(item => item.name === other.name)), JSON.stringify(other));
+    }
+  }
+}
+assert.equal(conf.workflow, JSON.stringify(original), 'Slider changes only affect the submitted workflow');
+conf.lastPenisSizeLora = 0;
+assert.equal(context.loraControlState().penisSize, 0, 'Remember zero without replacing it with the default');
+conf.lastPenisSizeLora = 3.5;
+assert.equal(context.loraControlState().penisSize, 3.5);
+conf.lastPenisSizeLora = 'invalid';
+assert.equal(context.loraControlState().penisSize, -1);
+assert.equal(context.penisSizeLoraValue(-99), -5);
+assert.equal(context.penisSizeLoraValue(99), 5);
+assert.equal(context.penisSizeLoraValue(2.3), 2.5);
+for (const value of [null, undefined, '', NaN, Infinity, 'invalid']) assert.equal(context.penisSizeLoraValue(value), null);
+assert.throws(() => context.workflowWithPrompt('scene', null, { penisSize: 'invalid' }), /penis_size LoRA/);
+const pathWorkflow = JSON.parse(conf.workflow);
+pathWorkflow['3'].inputs.loras.__value__.find(item => item.name === sizeName).name = 'folder\\' + sizeName + '.safetensors';
+conf.workflow = JSON.stringify(pathWorkflow);
+const sizeOnly = context.workflowWithPrompt('scene', null, { penisSize: 1.5 });
+assert.equal(sizeOnly['3'].inputs.loras.__value__.find(item => item.name.includes(sizeName)).strength, 1.5);
+conf.workflow = JSON.stringify(original);
 conf.lastCharacterLora = names[5]; conf.lastZoomLora = -8.5;
 assert.equal(context.loraControlState().character, names[5]);
 assert.equal(context.loraControlState().zoom, -8.5);
@@ -57,9 +93,12 @@ partial['3'].inputs.loras.__value__ = [entries[0]];
 conf.workflow = JSON.stringify(partial);
 assert.equal(context.loraControlState().characters.length, 1);
 assert.equal(context.loraControlState().zoomSupported, false);
+assert.equal(context.loraControlState().penisSizeSupported, false);
+assert.throws(() => context.workflowWithPrompt('scene', null, { penisSize: 1 }), /penis_size LoRA/);
+assert.doesNotThrow(() => context.workflowWithPrompt('scene', null, { penisSize: null }));
 assert.throws(() => context.workflowWithPrompt('scene', null, { character: names[0], zoom: -1 }), /zoom LoRA/);
 assert.doesNotThrow(() => context.workflowWithPrompt('scene', null, { character: names[0], zoom: null }));
 conf.workflow = '{}';
 assert.equal(context.loraControlState().characters.length, 0);
 assert.equal(context.loraControlState().zoomSupported, false);
-console.log('LoRA controls: all 6 characters x 25 zoom values, synchronized text/entries, preserved other LoRAs, defaults and memory passed.');
+console.log('LoRA controls: 6 characters x 25 zoom values and 21 size values, synchronized text/entries, preserved other LoRAs, defaults, validation and memory passed.');
