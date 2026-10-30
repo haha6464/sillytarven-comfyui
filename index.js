@@ -15,6 +15,7 @@ const defaultWorkflow = {
     { "name": "LanXidan_v1", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
     { "name": "YinShiyou_v1_9500", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
     { "name": "ZhouXinyi_v1", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
+    { "name": "ZengSiqi_v1", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
     { "name": "breast_size_v2_krea2_loraholic", "strength": "-1.00", "active": true, "expanded": false, "clipStrength": "-1.00", "selected": false, "locked": false },
     { "name": "penis_size_krea2_v2_loraholic", "strength": "-1.00", "active": true, "expanded": false, "clipStrength": "-1.00", "selected": false, "locked": false },
     { "name": "zoom_krea2_loraholic", "strength": "0.00", "active": true, "expanded": false, "clipStrength": "0.00", "selected": false, "locked": false },
@@ -77,7 +78,8 @@ const characterLoras = [
   { label: "牟纭萱", name: "MouYunxuan_v1" },
   { label: "兰茜丹", name: "LanXidan_v1" },
   { label: "尹施又", name: "YinShiyou_v1_9500" },
-  { label: "周心怡", name: "ZhouXinyi_v1" }
+  { label: "周心怡", name: "ZhouXinyi_v1" },
+  { label: "曾思齐", name: "ZengSiqi_v1" }
 ];
 const zoomLoraName = "zoom_krea2_loraholic";
 const penisSizeLoraName = "penis_size_krea2_v2_loraholic";
@@ -102,6 +104,7 @@ function loraControlState() {
   let entries = [];
   try { entries = loraManagerInputs(JSON.parse(conf.workflow)).flatMap(inputs => inputs.loras.__value__); } catch { /* Workflow validation happens at submission. */ }
   const characters = characterLoras.filter(character => entries.some(entry => loraName(entry.name) === character.name));
+  if (characters.length && !characters.some(character => character.name === "ZengSiqi_v1")) characters.push(characterLoras.at(-1));
   const activeCharacter = entries.find(entry => entry.active && characters.some(character => character.name === loraName(entry.name)));
   const character = characters.find(item => item.name === conf.lastCharacterLora)?.name || loraName(activeCharacter?.name) || characters[0]?.name || null;
   const zoom = entries.find(entry => loraName(entry.name) === zoomLoraName);
@@ -113,6 +116,10 @@ function applyLoraControls(workflow, controls) {
   if (!controls || (!controls.character && controls.zoom == null && controls.penisSize == null)) return;
   const inputsList = loraManagerInputs(workflow);
   const character = controls.character;
+  if (character === "ZengSiqi_v1" && !inputsList.some(inputs => inputs.loras.__value__.some(entry => loraName(entry.name) === character))) {
+    const target = inputsList.find(inputs => inputs.loras.__value__.some(entry => characterLoras.some(item => item.name === loraName(entry.name))));
+    if (target) target.loras.__value__.push({ name: character, strength: 1, active: false, expanded: false, clipStrength: 1, selected: false, locked: false });
+  }
   const zoom = zoomLoraValue(controls.zoom);
   const penisSize = penisSizeLoraValue(controls.penisSize);
   if (character && (!characterLoras.some(item => item.name === character) || !inputsList.some(inputs => inputs.loras.__value__.some(entry => loraName(entry.name) === character)))) throw new Error("工作流中找不到所选角色 LoRA。");
@@ -1168,7 +1175,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.6" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.7" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);

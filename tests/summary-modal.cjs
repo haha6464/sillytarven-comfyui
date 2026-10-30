@@ -92,7 +92,7 @@ assert.equal(ui.submitControls.children.filter(child => child.tag === 'button').
 assert.equal(ui.submit.type, 'button');
 assert.equal(ui.content.value, 'original scene');
 assert.equal(ui.sliders.length, 3);
-assert.deepEqual(ui.sliders.map(slider => [slider.min, slider.max, slider.step]), [['0', '5', '1'], ['-8', '5', '0.5'], ['0', '12', '0.5']]);
+assert.deepEqual(ui.sliders.map(slider => [slider.min, slider.max, slider.step]), [['0', '6', '1'], ['-8', '5', '0.5'], ['0', '12', '0.5']]);
 assert(ui.sliders.every(slider => !slider.disabled));
 assert.deepEqual(ui.sliderGroup.children.map(field => field.children[0].textContent), ['李蕊男', 'penis_size -1.0', 'zoom 0.0']);
 assert(ui.submit.disabled, 'Selection is mandatory with no default');
@@ -198,6 +198,15 @@ assert(ui.sliders.every(slider => slider.disabled), 'Missing workflow LoRAs disa
 ui.submit.events.click();
 assert.equal(generated.at(-1)[4].penisSize, null, 'Unsupported LoRA is not sent');
 savedSettings.workflow = JSON.stringify(defaultWorkflow);
+ui = openModal();
+ui.sliders[0].value = '6';
+ui.sliders[0].events.input();
+assert.equal(ui.sliderGroup.children[0].children[0].textContent, '曾思齐');
+assert.equal(savedSettings.lastCharacterLora, 'ZengSiqi_v1');
+ui.submit.events.click();
+assert.equal(generated.at(-1)[4].character, 'ZengSiqi_v1');
+ui = openModal(1);
+assert.equal(ui.sliders[0].value, '6');
 savedSettings.lastAspectRatio = 'invalid';
 ui = openModal();
 assert(ui.radios.every(radio => !radio.checked), 'Invalid remembered values are not preselected');

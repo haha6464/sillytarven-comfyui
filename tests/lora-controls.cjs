@@ -9,10 +9,10 @@ const workflowCode = source.slice(source.indexOf('function workflowWithPrompt(')
 const conf = { workflow: JSON.stringify(defaultWorkflow), positiveNodeId: '5', positiveInputName: 'text', lastCharacterLora: '', lastZoomLora: null };
 const context = vm.createContext({ settings: () => conf });
 vm.runInContext(helpers + workflowCode, context);
-const names = ['LiRuinan_v2', 'YangMaguo_v1_7500', 'MouYunxuan_v1', 'LanXidan_v1', 'YinShiyou_v1_9500', 'ZhouXinyi_v1'];
+const names = ['LiRuinan_v2', 'YangMaguo_v1_7500', 'MouYunxuan_v1', 'LanXidan_v1', 'YinShiyou_v1_9500', 'ZhouXinyi_v1', 'ZengSiqi_v1'];
 const original = JSON.parse(conf.workflow);
 const entries = original['3'].inputs.loras.__value__;
-assert.deepEqual(entries.slice(0, 6).map(entry => entry.name), names);
+assert.deepEqual(entries.slice(0, 7).map(entry => entry.name), names);
 assert.equal(entries.find(entry => entry.name === 'SNOFS_krea_v1_5').strength, .8);
 assert(original['3'].inputs.text.includes('<lora:SNOFS_krea_v1_5:0.80>'));
 assert.equal(entries.find(entry => entry.name.startsWith('breast_size')).strength, '-1.00');
@@ -91,7 +91,11 @@ assert.throws(() => context.workflowWithPrompt('scene', null, { character: 'miss
 const partial = JSON.parse(conf.workflow);
 partial['3'].inputs.loras.__value__ = [entries[0]];
 conf.workflow = JSON.stringify(partial);
-assert.equal(context.loraControlState().characters.length, 1);
+assert.equal(context.loraControlState().characters.length, 2);
+assert.equal(context.loraControlState().characters[1].name, 'ZengSiqi_v1');
+const upgraded = context.workflowWithPrompt('scene', null, { character: 'ZengSiqi_v1' });
+assert.equal(upgraded['3'].inputs.loras.__value__.find(entry => entry.name === 'ZengSiqi_v1').active, true);
+assert(!JSON.parse(conf.workflow)['3'].inputs.loras.__value__.some(entry => entry.name === 'ZengSiqi_v1'), 'Saved workflow is not overwritten');
 assert.equal(context.loraControlState().zoomSupported, false);
 assert.equal(context.loraControlState().penisSizeSupported, false);
 assert.throws(() => context.workflowWithPrompt('scene', null, { penisSize: 1 }), /penis_size LoRA/);
@@ -101,4 +105,4 @@ assert.doesNotThrow(() => context.workflowWithPrompt('scene', null, { character:
 conf.workflow = '{}';
 assert.equal(context.loraControlState().characters.length, 0);
 assert.equal(context.loraControlState().zoomSupported, false);
-console.log('LoRA controls: 6 characters x 25 zoom values and 27 size values, synchronized text/entries, preserved other LoRAs, defaults, validation and memory passed.');
+console.log('LoRA controls: 7 characters, saved-workflow compatibility, zoom, size, validation and memory passed.');
