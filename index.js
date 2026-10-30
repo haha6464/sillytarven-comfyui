@@ -99,10 +99,28 @@ function penisSizeLoraValue(value) {
 function loraManagerInputs(workflow) {
   return Object.values(workflow).filter(node => node?.class_type === "Lora Loader (LoraManager)" && Array.isArray(node.inputs?.loras?.__value__)).map(node => node.inputs);
 }
+function parseWorkflow(text) {
+  try { return JSON.parse(text); } catch (originalError) {
+    // Workflow editors may insert literal line breaks inside a JSON string.
+    let quoted = false, escaped = false, repaired = "";
+    for (const char of String(text)) {
+      if (quoted && !escaped && char.charCodeAt(0) < 32) {
+        repaired += JSON.stringify(char).slice(1, -1);
+      } else {
+        repaired += char;
+        if (quoted && escaped) escaped = false;
+        else if (quoted && char === "\\") escaped = true;
+        else if (char === '"') quoted = !quoted;
+      }
+    }
+    if (repaired === text) throw originalError;
+    return JSON.parse(repaired);
+  }
+}
 function loraControlState() {
   const conf = settings();
   let entries = [];
-  try { entries = loraManagerInputs(JSON.parse(conf.workflow)).flatMap(inputs => inputs.loras.__value__); } catch { /* Workflow validation happens at submission. */ }
+  try { entries = loraManagerInputs(parseWorkflow(conf.workflow)).flatMap(inputs => inputs.loras.__value__); } catch { /* Workflow validation happens at submission. */ }
   const characters = characterLoras.filter(character => entries.some(entry => loraName(entry.name) === character.name));
   if (characters.length && !characters.some(character => character.name === "ZengSiqi_v1")) characters.push(characterLoras.at(-1));
   const activeCharacter = entries.find(entry => entry.active && characters.some(character => character.name === loraName(entry.name)));
@@ -255,7 +273,7 @@ async function testComfyConnection() {
 function workflowWithPrompt(prompt, imageSize, loraControls) {
   const conf = settings();
   let workflow;
-  try { workflow = JSON.parse(conf.workflow); } catch (error) { throw new Error("工作流 JSON 无效：" + error.message); }
+  try { workflow = parseWorkflow(conf.workflow); } catch (error) { throw new Error("工作流 JSON 无效：" + error.message); }
   const node = workflow[conf.positiveNodeId];
   if (!node?.inputs || !(conf.positiveInputName in node.inputs)) throw new Error("找不到正向提示词位置：节点 " + conf.positiveNodeId + " 的 " + conf.positiveInputName + "。");
   node.inputs[conf.positiveInputName] = prompt;
@@ -1175,7 +1193,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.7" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.8" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
