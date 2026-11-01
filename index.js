@@ -742,6 +742,7 @@ function renderImage(mesId, imageUrl, prompt, messageElement) {
     button.dataset.galleryUrl = imageUrl;
     button.setAttribute("aria-label", label);
     button.textContent = glyph;
+    if (action === "delete") button.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/></svg>';
     result.append(button);
   };
   if (images.length > 1) {
@@ -753,7 +754,7 @@ function renderImage(mesId, imageUrl, prompt, messageElement) {
   counter.textContent = (index + 1) + "/" + images.length;
   counter.setAttribute("aria-live", "polite");
   result.append(counter);
-  control("delete", "从图集中删除当前图片", "×");
+  control("delete", "从图集中删除当前图片", "");
   const download = document.createElement("a");
   download.className = "scene-draw-result-download";
   download.href = imageUrl;
@@ -1273,7 +1274,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.4.1" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.4.2" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);

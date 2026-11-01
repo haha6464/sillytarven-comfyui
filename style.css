@@ -56,6 +56,7 @@
 .scene-draw-gallery-previous { left: 8px; top: 50%; transform: translateY(-50%); }
 .scene-draw-gallery-next { right: 8px; top: 50%; transform: translateY(-50%); }
 .scene-draw-gallery-delete { top: 8px; right: 44px; width: 28px; min-width: 28px; height: 28px; font-size: 24px; }
+.scene-draw-gallery-delete svg { display: block; pointer-events: none; }
 .scene-draw-gallery-control:focus-visible { outline: 2px solid #8db9f4; outline-offset: 2px; }
 .scene-draw-gallery-counter { position: absolute; z-index: 1; top: 8px; left: 8px; padding: 3px 8px; border-radius: 10px; background: rgba(0, 0, 0, .62); color: #fff; font: 12px/1.4 sans-serif; pointer-events: none; }
 .scene-draw-image-viewer { position: fixed; z-index: 2147483647; inset: 0; box-sizing: border-box; display: block; width: 100vw; height: 100vh; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: rgba(0, 0, 0, .9); cursor: zoom-out; touch-action: none; }
