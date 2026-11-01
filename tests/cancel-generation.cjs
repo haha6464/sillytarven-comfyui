@@ -6,6 +6,7 @@ const source = fs.readFileSync(path.resolve(__dirname, '../index.js'), 'utf8');
 const cancelCode = source.slice(source.indexOf('async function cancelImageGeneration('), source.indexOf('async function generateDirect('));
 const imageCode = source.slice(source.indexOf('async function generateImage('), source.indexOf('const workflowSteps ='));
 const generationCode = source.slice(source.indexOf('async function generateFromSummary('), source.indexOf('async function runForMessage('));
+const galleryCode = source.slice(source.indexOf('function galleryImages('), source.indexOf('const galleryDeletions ='));
 const handlerCode = source.slice(source.indexOf('function bindGenerationClickHandler('), source.indexOf('function settingField('));
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const queueItem = (id, client) => [0, id, {}, { client_id: client }];
@@ -40,7 +41,7 @@ function harness() {
       throw new Error('Unexpected control request ' + url);
     },
   });
-  vm.runInContext(cancelCode + imageCode + generationCode, context);
+  vm.runInContext(cancelCode + imageCode + galleryCode + generationCode, context);
   return { context, message, jobs, running, notices, requests, savedImages, release: value => releaseImage(value), reject: error => rejectImage(error), client: () => activeClient };
 }
 
@@ -71,6 +72,7 @@ function harness() {
   await flush(); h.release('image'); await retry;
   assert.equal(h.message.extra.sceneDrawState.step, 'completed');
   assert.equal(h.message.extra.sceneDrawImage, '/new-image.png');
+  assert.equal(h.message.extra.sceneDrawImages.length, 2, 'Regeneration appends and preserves the original image');
 
   // If execution exits before the cancel acknowledgement arrives, classification must wait for it.
   const race = harness();

@@ -7,6 +7,7 @@ const variables = source.slice(source.indexOf('const imageAspectRatios ='), sour
 const workflowCode = source.slice(source.indexOf('function workflowWithPrompt('), source.indexOf('function outputImage('));
 const imageCode = source.slice(source.indexOf('async function generateImage('), source.indexOf('const workflowSteps ='));
 const generationCode = source.slice(source.indexOf('async function generateFromSummary('), source.indexOf('async function runForMessage('));
+const galleryCode = source.slice(source.indexOf('function galleryImages('), source.indexOf('const galleryDeletions ='));
 const defaultWorkflow = vm.runInNewContext(source.slice(source.indexOf('const defaultWorkflow ='), source.indexOf('const defaults =')) + '; defaultWorkflow');
 const template = {
   '3': defaultWorkflow['3'],
@@ -31,7 +32,7 @@ const context = vm.createContext({
   persistImage: async () => '/saved/image.png', renderImage: () => {}, renderSidebar: () => {},
   setWorkflowState: (id, msg, step, detail) => { msg.extra.sceneDrawState = { step, detail }; },
 });
-vm.runInContext(variables + workflowCode + imageCode + generationCode, context);
+vm.runInContext(variables + workflowCode + imageCode + galleryCode + generationCode, context);
 (async () => {
   const sizes = { '9:16': [900, 1600], '3:4': [1050, 1400], '16:9': [1600, 900], '4:3': [1400, 1050], '1:1': [1200, 1200] };
   for (const useProxy of [true, false]) {

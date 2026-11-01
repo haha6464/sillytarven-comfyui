@@ -676,16 +676,88 @@ function recoverAfterChatLoad() {
     updateActiveMessage();
   }, 0);
 }
+function galleryImages(message) {
+  const extra = message?.extra;
+  if (Array.isArray(extra?.sceneDrawImages)) return extra.sceneDrawImages;
+  return extra?.sceneDrawImage ? [{ url: extra.sceneDrawImage, prompt: extra.sceneDrawPrompt || "" }] : [];
+}
+function appendGalleryImage(message, url, prompt) {
+  const images = [...galleryImages(message), { url, prompt }];
+  message.extra ||= {};
+  message.extra.sceneDrawImages = images;
+  message.extra.sceneDrawImageIndex = images.length - 1;
+  message.extra.sceneDrawImage = url;
+}
+const galleryDeletions = new WeakSet();
+async function changeGallery(mesId, action, expectedUrl) {
+  const message = chat[Number(mesId)];
+  if (!message || galleryDeletions.has(message)) return;
+  const images = [...galleryImages(message)];
+  if (!images.length) return;
+  let index = Math.max(0, Math.min(images.length - 1, message.extra.sceneDrawImageIndex || 0));
+  if (images[index].url !== expectedUrl) return;
+  const removed = images[index];
+  const removedIndex = index;
+  if (action === "delete") {
+    images.splice(index, 1);
+    index = Math.min(index, Math.max(0, images.length - 1));
+    galleryDeletions.add(message);
+  } else index = (index + (action === "next" ? 1 : -1) + images.length) % images.length;
+  message.extra.sceneDrawImages = images;
+  message.extra.sceneDrawImageIndex = index;
+  if (images.length) message.extra.sceneDrawImage = images[index].url;
+  else delete message.extra.sceneDrawImage;
+  renderImage(mesId);
+  try { await saveChatConditional(); } catch (error) {
+    if (action === "delete") {
+      const current = [...galleryImages(message)];
+      const selected = current[message.extra.sceneDrawImageIndex || 0];
+      current.splice(Math.min(removedIndex, current.length), 0, removed);
+      message.extra.sceneDrawImages = current;
+      message.extra.sceneDrawImageIndex = selected ? current.indexOf(selected) : removedIndex;
+      message.extra.sceneDrawImage = current[message.extra.sceneDrawImageIndex].url;
+      if (chat[Number(mesId)] === message) renderImage(mesId);
+    }
+    notify("error", "保存图集失败：" + (error.message || String(error)));
+  } finally { galleryDeletions.delete(message); }
+}
 function renderImage(mesId, imageUrl, prompt, messageElement) {
   const mes = messageElement || document.querySelector('.mes[mesid="' + CSS.escape(String(mesId)) + '"]');
   if (!mes) return;
   mes.querySelector(".scene-draw-result")?.remove();
+  const message = chat[Number(mesId)];
+  const images = galleryImages(message);
+  if (!images.length) return;
+  const index = Math.max(0, Math.min(images.length - 1, message.extra.sceneDrawImageIndex || 0));
+  imageUrl = images[index].url;
+  prompt = images[index].prompt;
   const result = document.createElement("div");
   result.className = "scene-draw-result";
+  result.dataset.sceneDrawMesid = String(mesId);
+  const control = (action, label, glyph) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "scene-draw-gallery-control scene-draw-gallery-" + action;
+    button.dataset.galleryAction = action;
+    button.dataset.galleryUrl = imageUrl;
+    button.setAttribute("aria-label", label);
+    button.textContent = glyph;
+    result.append(button);
+  };
+  if (images.length > 1) {
+    control("previous", "上一张图片", "‹");
+    control("next", "下一张图片", "›");
+    const counter = document.createElement("span");
+    counter.className = "scene-draw-gallery-counter";
+    counter.textContent = (index + 1) + "/" + images.length;
+    counter.setAttribute("aria-live", "polite");
+    result.append(counter);
+  }
+  control("delete", "从图集中删除当前图片", "×");
   const download = document.createElement("a");
   download.className = "scene-draw-result-download";
   download.href = imageUrl;
-  download.download = "scene-draw-" + mesId + ".png";
+  download.download = "scene-draw-" + mesId + "-" + (index + 1) + ".png";
   download.title = "下载图片";
   download.setAttribute("aria-label", "下载图片");
   download.innerHTML = '<i class="fa-solid fa-download"></i>';
@@ -713,6 +785,7 @@ async function generateFromSummary(mesId, message, prompt, aspectRatio, loraCont
   imageGenerations.set(message, job);
   try {
     message.extra ||= {};
+    message.extra.sceneDrawImages ||= galleryImages(message);
     message.extra.sceneDrawPrompt = prompt;
     message.extra.sceneDrawAspectRatio = aspectRatio;
     if (loraControls) message.extra.sceneDrawLoraControls = { ...loraControls };
@@ -724,7 +797,7 @@ async function generateFromSummary(mesId, message, prompt, aspectRatio, loraCont
     imageGenerations.delete(message);
     setWorkflowState(mesId, message, "generating", "图片已生成，正在保存到酒馆");
     const savedImage = await persistImage(image);
-    message.extra.sceneDrawImage = savedImage;
+    appendGalleryImage(message, savedImage, prompt);
     renderImage(mesId, savedImage, prompt);
     setWorkflowState(mesId, message, "completed", "图片生成完成，可在下方查看");
     await saveChatConditional();
@@ -791,7 +864,7 @@ function decorateMessage(mes) {
   const message = chat[Number(mesId)];
   if (!message || message.is_user || message.is_system) return;
   mes.querySelectorAll(".scene-draw-button, .scene-draw-workflow").forEach((element) => element.remove());
-  if (message.extra?.sceneDrawImage && !mes.querySelector(".scene-draw-result")) renderImage(mesId, message.extra.sceneDrawImage, message.extra.sceneDrawPrompt || "", mes);
+  if (galleryImages(message).length && !mes.querySelector(".scene-draw-result")) renderImage(mesId, null, null, mes);
 }
 function decorateMessages() { document.querySelectorAll(".mes[mesid]").forEach(decorateMessage); }
 function showSummaryModal(mesId) {
@@ -1016,6 +1089,13 @@ function bindGenerationClickHandler() {
   // Some character-card beautifiers clone or replace message nodes. Event
   // delegation keeps copied image buttons functional after that transformation.
   document.addEventListener("click", (event) => {
+    const galleryButton = event.target instanceof Element ? event.target.closest("[data-gallery-action]") : null;
+    if (galleryButton?.closest(".scene-draw-result")) {
+      event.preventDefault();
+      event.stopPropagation();
+      void changeGallery(galleryButton.closest(".scene-draw-result").dataset.sceneDrawMesid, galleryButton.dataset.galleryAction, galleryButton.dataset.galleryUrl);
+      return;
+    }
     const image = event.target instanceof Element ? event.target.closest(".scene-draw-result-image") : null;
     if (image) {
       event.preventDefault();
@@ -1193,7 +1273,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.3.8" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.4.0" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
