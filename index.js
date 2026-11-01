@@ -747,12 +747,12 @@ function renderImage(mesId, imageUrl, prompt, messageElement) {
   if (images.length > 1) {
     control("previous", "上一张图片", "‹");
     control("next", "下一张图片", "›");
-    const counter = document.createElement("span");
-    counter.className = "scene-draw-gallery-counter";
-    counter.textContent = (index + 1) + "/" + images.length;
-    counter.setAttribute("aria-live", "polite");
-    result.append(counter);
   }
+  const counter = document.createElement("span");
+  counter.className = "scene-draw-gallery-counter";
+  counter.textContent = (index + 1) + "/" + images.length;
+  counter.setAttribute("aria-live", "polite");
+  result.append(counter);
   control("delete", "从图集中删除当前图片", "×");
   const download = document.createElement("a");
   download.className = "scene-draw-result-download";
@@ -1273,7 +1273,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.4.0" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.4.1" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);

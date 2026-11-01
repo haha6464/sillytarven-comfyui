@@ -65,7 +65,7 @@ const node = className => result().children.find(x => x.className === className)
   await ctx.changeGallery(0, 'delete', '/new.png');
   assert.equal(message.extra.sceneDrawImages.length, 1);
   assert.equal(node('scene-draw-result-image').src, '/old.png');
-  assert(!node('scene-draw-gallery-counter'));
+  assert.equal(node('scene-draw-gallery-counter').textContent, '1/1');
   await ctx.changeGallery(0, 'delete', '/old.png');
   assert.equal(message.extra.sceneDrawImages.length, 0);
   assert.equal(message.extra.sceneDrawImage, undefined);
