@@ -47,6 +47,7 @@ function harness() {
 
 (async () => {
   const h = harness();
+  h.message.extra.sceneDrawConfig = { prompt: 'previous successful prompt', aspectRatio: '3:4' };
   const generation = h.context.generateFromSummary(0, h.message, 'scene', '1:1');
   await flush();
   assert(h.jobs.has(h.message));
@@ -63,6 +64,7 @@ function harness() {
   h.reject(new Error('ComfyUI execution interrupted'));
   await generation;
   assert.equal(h.message.extra.sceneDrawState.step, 'cancelled');
+  assert.equal(h.message.extra.sceneDrawConfig.prompt, 'previous successful prompt', 'Cancellation keeps the previous configuration');
   assert.equal(h.message.extra.sceneDrawImage, '/old-image.png', 'Existing images survive cancellation');
   assert.equal(h.savedImages.length, 0);
   assert.equal(h.jobs.has(h.message), false);

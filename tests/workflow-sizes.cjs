@@ -40,6 +40,9 @@ vm.runInContext(variables + workflowCode + imageCode + galleryCode + generationC
     for (const [ratio, [width, height]] of Object.entries(sizes)) {
       const controls = { character: 'MouYunxuan_v1', zoom: -6.5 };
       await context.generateFromSummary(0, message, 'edited scene', ratio, controls);
+      assert.equal(message.extra.sceneDrawConfig.aspectRatio, ratio);
+      assert.equal(message.extra.sceneDrawConfig.prompt, 'edited scene');
+      assert.equal(message.extra.sceneDrawConfig.loraControls.character, controls.character);
       const request = requests.at(-1);
       assert.equal(request.route, useProxy ? 'proxy' : 'direct');
       for (const nodeId of ['13', '20']) {

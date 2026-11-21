@@ -802,6 +802,7 @@ async function generateFromSummary(mesId, message, prompt, aspectRatio, loraCont
     setWorkflowState(mesId, message, "generating", "图片已生成，正在保存到酒馆");
     const savedImage = await persistImage(image);
     appendGalleryImage(message, savedImage, prompt);
+    message.extra.sceneDrawConfig = { prompt, aspectRatio, loraControls: { ...loraControls } };
     renderImage(mesId, savedImage, prompt);
     setWorkflowState(mesId, message, "completed", "图片生成完成，可在下方查看");
     await saveChatConditional();
@@ -873,7 +874,8 @@ function decorateMessage(mes) {
 function decorateMessages() { document.querySelectorAll(".mes[mesid]").forEach(decorateMessage); }
 function showSummaryModal(mesId) {
   const message = chat[Number(mesId)];
-  const summary = message?.extra?.sceneDrawPrompt;
+  const savedConfig = message?.extra?.sceneDrawConfig;
+  const summary = savedConfig?.prompt ?? message?.extra?.sceneDrawPrompt;
   if (!summary) return;
   document.querySelector(".scene-draw-summary-modal")?.remove();
   const modal = document.createElement("div");
@@ -896,15 +898,26 @@ function showSummaryModal(mesId) {
   confirm.type = "button";
   confirm.className = "menu_button scene-draw-summary-modal-confirm";
   confirm.textContent = "提交";
-  const rememberedRatio = settings().lastAspectRatio;
+  const saveButton = document.createElement("button");
+  saveButton.type = "button";
+  saveButton.className = "menu_button scene-draw-summary-modal-save";
+  saveButton.textContent = "保存";
+  const rememberedRatio = savedConfig?.aspectRatio ?? settings().lastAspectRatio;
   let selectedRatio = imageSizeForRatio(rememberedRatio) ? rememberedRatio : null;
   confirm.disabled = !selectedRatio;
+  saveButton.disabled = !selectedRatio;
   const ratios = document.createElement("div");
   ratios.className = "scene-draw-aspect-ratios";
   ratios.setAttribute("role", "radiogroup");
   ratios.setAttribute("aria-label", "图片比例（必选）");
   ratios.setAttribute("aria-required", "true");
   const loraState = loraControlState();
+  if (savedConfig?.loraControls) {
+    const saved = savedConfig.loraControls;
+    if (loraState.characters.some(item => item.name === saved.character)) loraState.character = saved.character;
+    loraState.penisSize = penisSizeLoraValue(saved.penisSize) ?? loraState.penisSize;
+    loraState.zoom = zoomLoraValue(saved.zoom) ?? loraState.zoom;
+  }
   const loraControls = { character: loraState.character, penisSize: loraState.penisSizeSupported ? loraState.penisSize : null, zoom: loraState.zoomSupported ? loraState.zoom : null };
   const sliders = document.createElement("div");
   sliders.className = "scene-draw-lora-sliders";
@@ -969,6 +982,7 @@ function showSummaryModal(mesId) {
         if (!radio.checked) return;
         selectedRatio = radio.value;
         confirm.disabled = !imageSizeForRatio(selectedRatio);
+        saveButton.disabled = confirm.disabled;
         if (!confirm.disabled) {
           settings().lastAspectRatio = selectedRatio;
           save();
@@ -981,28 +995,64 @@ function showSummaryModal(mesId) {
     });
     ratios.append(row);
   });
-  confirm.addEventListener("click", () => {
+  const readConfig = () => {
     if (!imageSizeForRatio(selectedRatio)) {
       firstRadio.focus();
-      return;
+      return null;
     }
     const editedPrompt = content.value.trim();
     if (!editedPrompt) {
       notify("error", "场景总结不能为空。");
       content.focus();
-      return;
+      return null;
     }
     if (chat[Number(mesId)] !== message) {
       notify("error", "聊天已切换，请返回原聊天后重试。");
       modal.remove();
-      return;
+      return null;
     }
+    return { prompt: editedPrompt, aspectRatio: selectedRatio, loraControls: { ...loraControls } };
+  };
+  let saving = false;
+  confirm.addEventListener("click", () => {
+    if (saving) return;
+    const config = readConfig();
+    if (!config) return;
     modal.remove();
-    generateFromSummary(mesId, message, editedPrompt, selectedRatio, { ...loraControls });
+    generateFromSummary(mesId, message, config.prompt, config.aspectRatio, config.loraControls);
+  });
+  saveButton.addEventListener("click", async () => {
+    if (saving) return;
+    const config = readConfig();
+    if (!config) return;
+    saving = true;
+    confirm.disabled = saveButton.disabled = true;
+    message.extra ||= {};
+    const previousConfig = message.extra.sceneDrawConfig;
+    const previousPrompt = message.extra.sceneDrawPrompt;
+    message.extra.sceneDrawConfig = config;
+    message.extra.sceneDrawPrompt = config.prompt;
+    try {
+      await saveChatConditional();
+      notify("success", "本条消息的生图配置已保存。");
+    } catch (error) {
+      if (message.extra.sceneDrawConfig === config) {
+        if (previousConfig === undefined) delete message.extra.sceneDrawConfig;
+        else message.extra.sceneDrawConfig = previousConfig;
+        message.extra.sceneDrawPrompt = previousPrompt;
+      }
+      notify("error", "保存生图配置失败：" + (error.message || String(error)));
+    } finally {
+      saving = false;
+      confirm.disabled = saveButton.disabled = !imageSizeForRatio(selectedRatio);
+    }
   });
   const submitControls = document.createElement("div");
   submitControls.className = "scene-draw-summary-submit-controls";
-  submitControls.append(confirm, sliders);
+  const buttons = document.createElement("div");
+  buttons.className = "scene-draw-summary-buttons";
+  buttons.append(confirm, saveButton);
+  submitControls.append(buttons, sliders);
   actions.append(ratios, submitControls);
   panel.append(title, content, actions);
   modal.append(panel);
@@ -1277,7 +1327,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.4.3" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.5.0" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
