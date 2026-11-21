@@ -1,4 +1,4 @@
-import { extension_settings } from "../../../extensions.js";
+import { extension_settings, getContext } from "../../../extensions.js";
 import { chat, eventSource, event_types, getRequestHeaders, saveChatConditional, saveSettingsDebounced } from "../../../../script.js";
 
 const extensionName = "st-chatu8";
@@ -819,6 +819,7 @@ async function generateFromSummary(mesId, message, prompt, aspectRatio, loraCont
     message.extra.sceneDrawPrompt = prompt;
     message.extra.sceneDrawAspectRatio = aspectRatio;
     if (loraControls) message.extra.sceneDrawLoraControls = { ...loraControls };
+    message.extra.sceneDrawConfig = { prompt, aspectRatio, loraControls: { ...loraControls } };
     setWorkflowState(mesId, message, "submitting", "已确认场景总结，正在提交工作流");
     await saveChatConditional();
     const image = await generateImage(prompt, (step, detail, progress) => setWorkflowState(mesId, message, step, detail, progress), imageSize, loraControls, job);
@@ -828,7 +829,6 @@ async function generateFromSummary(mesId, message, prompt, aspectRatio, loraCont
     setWorkflowState(mesId, message, "generating", "图片已生成，正在保存到酒馆");
     const savedImage = await persistImage(image);
     appendGalleryImage(message, savedImage, prompt);
-    message.extra.sceneDrawConfig = { prompt, aspectRatio, loraControls: { ...loraControls } };
     renderImage(mesId, savedImage, prompt);
     setWorkflowState(mesId, message, "completed", "图片生成完成，可在下方查看");
     await saveChatConditional();
@@ -1041,17 +1041,7 @@ function showSummaryModal(mesId) {
     return { prompt: editedPrompt, aspectRatio: selectedRatio, loraControls: { ...loraControls } };
   };
   let saving = false;
-  confirm.addEventListener("click", () => {
-    if (saving) return;
-    const config = readConfig();
-    if (!config) return;
-    modal.remove();
-    generateFromSummary(mesId, message, config.prompt, config.aspectRatio, config.loraControls);
-  });
-  saveButton.addEventListener("click", async () => {
-    if (saving) return;
-    const config = readConfig();
-    if (!config) return;
+  const persistConfig = async config => {
     saving = true;
     confirm.disabled = saveButton.disabled = true;
     message.extra ||= {};
@@ -1060,8 +1050,20 @@ function showSummaryModal(mesId) {
     message.extra.sceneDrawConfig = config;
     message.extra.sceneDrawPrompt = config.prompt;
     try {
+      const context = getContext();
+      const groupChat = Boolean(context.groupId);
+      const avatar = context.characters[context.characterId]?.avatar;
+      if (!context.chatId || (!groupChat && !avatar)) throw new Error('找不到当前聊天存档。');
       await saveChatConditional();
-      notify("success", "本条消息的生图配置已保存。");
+      // Tavern can swallow save errors, so verify the persisted snapshot before generating.
+      const response = await fetch(groupChat ? '/api/chats/group/get' : '/api/chats/get', {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify(groupChat ? { id: context.chatId } : { file_name: context.chatId, avatar_url: avatar })
+      });
+      if (!response.ok) throw new Error('无法确认聊天配置已保存（' + response.status + '）。');
+      const storedChat = await response.json();
+      if (JSON.stringify(storedChat[Number(mesId) + 1]?.extra?.sceneDrawConfig) !== JSON.stringify(config)) throw new Error('聊天存档中的生图配置尚未保存，请重试。');
+      return true;
     } catch (error) {
       if (message.extra.sceneDrawConfig === config) {
         if (previousConfig === undefined) delete message.extra.sceneDrawConfig;
@@ -1069,10 +1071,27 @@ function showSummaryModal(mesId) {
         message.extra.sceneDrawPrompt = previousPrompt;
       }
       notify("error", "保存生图配置失败：" + (error.message || String(error)));
+      return false;
     } finally {
       saving = false;
       confirm.disabled = saveButton.disabled = !imageSizeForRatio(selectedRatio);
     }
+  };
+  confirm.addEventListener("click", async () => {
+    if (saving) return;
+    const config = readConfig();
+    if (!config || !await persistConfig(config)) return;
+    if (chat[Number(mesId)] !== message) {
+      notify("error", "聊天已切换，配置已保存，未开始生图。");
+      return;
+    }
+    modal.remove();
+    generateFromSummary(mesId, message, config.prompt, config.aspectRatio, config.loraControls);
+  });
+  saveButton.addEventListener("click", async () => {
+    if (saving) return;
+    const config = readConfig();
+    if (config && await persistConfig(config)) notify("success", "本条消息的生图配置已保存。");
   });
   const submitControls = document.createElement("div");
   submitControls.className = "scene-draw-summary-submit-controls";
@@ -1361,7 +1380,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.6.1" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.6.2" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);

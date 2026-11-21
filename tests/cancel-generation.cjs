@@ -65,7 +65,7 @@ function harness() {
   h.reject(new Error('ComfyUI execution interrupted'));
   await generation;
   assert.equal(h.message.extra.sceneDrawState.step, 'cancelled');
-  assert.equal(h.message.extra.sceneDrawConfig.prompt, 'previous successful prompt', 'Cancellation keeps the previous configuration');
+  assert.equal(h.message.extra.sceneDrawConfig.prompt, 'scene', 'Cancellation retains the configuration saved before submission');
   assert.equal(h.message.extra.sceneDrawImage, '/old-image.png', 'Existing images survive cancellation');
   assert.equal(h.savedImages.length, 0);
   assert.equal(h.jobs.has(h.message), false);
