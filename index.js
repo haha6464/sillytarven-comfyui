@@ -969,6 +969,10 @@ function showSummaryModal(mesId) {
   addSlider("角色 LoRA", 0, Math.max(1, loraState.characters.length - 1), 1, Math.max(0, loraState.characters.findIndex(item => item.name === loraState.character)), loraState.characters.length < 2, index => {
     const character = loraState.characters[index];
     if (!character) return;
+    const previousCharacter = loraState.characters.find(item => item.name === loraControls.character);
+    if (previousCharacter && previousCharacter.name !== character.name) {
+      content.value = content.value.replaceAll(previousCharacter.label, character.label);
+    }
     loraControls.character = character.name;
     settings().lastCharacterLora = character.name;
     save();
@@ -1380,7 +1384,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.6.2" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.6.3" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
