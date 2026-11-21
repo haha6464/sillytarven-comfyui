@@ -733,7 +733,8 @@ async function changeGallery(mesId, action, expectedUrl) {
     if (action === 'delete') {
       try {
         const cleanup = await imageFileService('cleanup', [removed.url]);
-        if (cleanup.retained?.length) notify('info', '图片仍被其他聊天引用，已保留文件。');
+        const removedPath = decodeURIComponent(removed.url.replace(/^https?:\/\/[^/]+/, '').replace(/^\//, ''));
+        if (cleanup.retained?.includes(removedPath)) notify('info', '图片仍被其他聊天引用，已保留文件。');
       } catch (error) { notify('error', '图集已更新，但图片文件未删除：' + error.message); }
     }
   } catch (error) {
@@ -1360,7 +1361,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.6.0" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.6.1" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);

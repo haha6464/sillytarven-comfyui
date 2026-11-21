@@ -64,11 +64,16 @@ const node = className => result().children.find(x => x.className === className)
   assert.equal(notices.at(-1)[0], 'error');
   rejectSave = false;
   await ctx.changeGallery(0, 'next', message.extra.sceneDrawImage);
+  ctx.fetch = async () => ({ok:true,json:async()=>({retained:['user/images/unrelated.png']})});
+  const noticesBeforeDelete = notices.length;
   await ctx.changeGallery(0, 'delete', '/new.png');
+  assert.equal(notices.length, noticesBeforeDelete, 'References to unrelated images cannot trigger a retained-file warning');
   assert.equal(message.extra.sceneDrawImages.length, 1);
   assert.equal(node('scene-draw-result-image').src, '/old.png');
   assert.equal(node('scene-draw-gallery-counter').textContent, '1/1');
+  ctx.fetch = async () => ({ok:true,json:async()=>({retained:['old.png']})});
   await ctx.changeGallery(0, 'delete', '/old.png');
+  assert.equal(notices.at(-1)[0], 'info', 'A retained reference to the selected image still gets a warning');
   assert.equal(message.extra.sceneDrawImages.length, 0);
   assert.equal(message.extra.sceneDrawImage, undefined);
   assert(!result(), 'Deleting the last image removes the gallery');

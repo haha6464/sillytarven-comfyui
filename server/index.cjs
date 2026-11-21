@@ -73,7 +73,7 @@ async function run(dirs, mode, requested = []) {
   if (mode === 'cleanup') {
     for (const item of state.records) {
       // Targeted gallery removal, or a previously referenced image whose last chat/message was removed.
-      if (!ledger[item.path] || (!requested.includes(item.path) && !ledger[item.path].referenced)) continue;
+      if (!ledger[item.path] || (requested.length ? !requested.includes(item.path) : !ledger[item.path].referenced)) continue;
       if (item.references) { retained.push(item.path); continue; }
       // Recheck all chats immediately before unlinking each exact image file.
       const fresh = await scan(dirs);
