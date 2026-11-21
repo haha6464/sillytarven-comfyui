@@ -21,6 +21,7 @@ function harness() {
     clientId: 'page', logPrefix: '[test]', URL, AbortSignal,
     Date, setTimeout: callback => { queueMicrotask(callback); return 0; },
     renderSidebar: () => {}, debug: () => {},
+    imageFileService: async () => ({}),
     console: { warn: () => {}, error: () => {} },
     notify: (kind, text) => notices.push({ kind, text }),
     workflowWithPrompt: () => ({}),

@@ -317,7 +317,7 @@ async function persistImage(imageDataUrl) {
   const response = await fetch("/api/images/upload", {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ image, format })
+    body: JSON.stringify({ image, format, ch_name: "scene-draw", filename: "scene-draw-" + Date.now() + "-" + Math.random().toString(36).slice(2) })
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || !data.path) throw new Error(data.error?.message || data.message || "酒馆未能保存生成图片（" + response.status + "）。");
@@ -692,13 +692,30 @@ function appendGalleryImage(message, url, prompt) {
   message.extra.sceneDrawImage = url;
 }
 const galleryDeletions = new WeakSet();
+async function imageFileService(action, paths = []) {
+  const response = await fetch('/api/plugins/scene-draw-files/' + action, {
+    method: 'POST', headers: headers(), body: JSON.stringify({ paths })
+  });
+  if (!response.ok) throw new Error(response.status === 404 ? '请先安装并启用图片清理服务端模块。' : '图片文件检查失败（' + response.status + '）。');
+  return response.json();
+}
+async function cleanupDeletedImages() {
+  try { await imageFileService('cleanup'); }
+  catch (error) { console.warn(logPrefix + ' 图片清理未完成', error); }
+}
 async function changeGallery(mesId, action, expectedUrl) {
   const message = chat[Number(mesId)];
   if (!message || galleryDeletions.has(message)) return;
+  if (action === 'delete') {
+    galleryDeletions.add(message);
+    try { await imageFileService('track'); }
+    catch (error) { galleryDeletions.delete(message); notify('error', error.message); return; }
+    if (chat[Number(mesId)] !== message) { galleryDeletions.delete(message); return; }
+  }
   const images = [...galleryImages(message)];
-  if (!images.length) return;
+  if (!images.length) { galleryDeletions.delete(message); return; }
   let index = Math.max(0, Math.min(images.length - 1, message.extra.sceneDrawImageIndex || 0));
-  if (images[index].url !== expectedUrl) return;
+  if (images[index].url !== expectedUrl) { galleryDeletions.delete(message); return; }
   const removed = images[index];
   const removedIndex = index;
   if (action === "delete") {
@@ -711,7 +728,15 @@ async function changeGallery(mesId, action, expectedUrl) {
   if (images.length) message.extra.sceneDrawImage = images[index].url;
   else delete message.extra.sceneDrawImage;
   renderImage(mesId);
-  try { await saveChatConditional(); } catch (error) {
+  try {
+    await saveChatConditional();
+    if (action === 'delete') {
+      try {
+        const cleanup = await imageFileService('cleanup', [removed.url]);
+        if (cleanup.retained?.length) notify('info', '图片仍被其他聊天引用，已保留文件。');
+      } catch (error) { notify('error', '图集已更新，但图片文件未删除：' + error.message); }
+    }
+  } catch (error) {
     if (action === "delete") {
       const current = [...galleryImages(message)];
       const selected = current[message.extra.sceneDrawImageIndex || 0];
@@ -807,6 +832,7 @@ async function generateFromSummary(mesId, message, prompt, aspectRatio, loraCont
     setWorkflowState(mesId, message, "completed", "图片生成完成，可在下方查看");
     await saveChatConditional();
     notify("success", "图片已生成。");
+    imageFileService('track').catch(error => debug('图片文件清理服务不可用', { reason: error.message }));
   } catch (error) {
     if (job.interruptPromise) await job.interruptPromise.catch(() => {});
     if (job.cancelled) setWorkflowState(mesId, message, "cancelled", "本次生图已中断。");
@@ -1323,15 +1349,28 @@ function addSettings() {
   const test = document.createElement("button");
   test.type = "button"; test.className = "menu_button"; test.textContent = "验证工作流正向节点";
   test.addEventListener("click", () => { try { workflowWithPrompt("scene draw connection test"); notify("success", "工作流 JSON 和正向提示词节点有效。"); } catch (error) { notify("error", error.message); } });
-  content.append(test); panel.append(content);
+  content.append(test);
+  const cleanupTest = document.createElement('button');
+  cleanupTest.type = 'button'; cleanupTest.className = 'menu_button'; cleanupTest.textContent = '检查图片清理服务';
+  cleanupTest.addEventListener('click', async () => {
+    try { await imageFileService('track'); notify('success', '图片清理服务已连接。'); }
+    catch (error) { notify('error', error.message); }
+  });
+  content.append(cleanupTest); panel.append(content);
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.5.0" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.6.0" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
   eventSource.on(event_types.CHAT_CHANGED, recoverAfterChatLoad);
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => setTimeout(() => { decorateMessages(); updateActiveMessage(); }));
+  imageFileService('track').catch(error => debug('图片文件清理服务不可用', { reason: error.message }));
+  if (event_types.CHAT_DELETED) eventSource.on(event_types.CHAT_DELETED, cleanupDeletedImages);
+  if (event_types.MESSAGE_DELETED) eventSource.on(event_types.MESSAGE_DELETED, async () => {
+    try { await saveChatConditional(); await cleanupDeletedImages(); }
+    catch (error) { console.warn(logPrefix + ' 消息未保存，跳过图片清理', error); }
+  });
 }
 jQuery(start);

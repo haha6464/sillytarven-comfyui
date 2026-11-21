@@ -10,6 +10,7 @@ if (process.argv[2] === '--preview') {
     document.body.style.cssText = 'margin:16px;background:#191919;color:white;font:16px sans-serif';
     const mes = document.createElement('div'); mes.className = 'mes'; mes.setAttribute('mesid', '0'); document.body.append(mes);
     const chat = [{extra:{}}]; const saveChatConditional = async () => {}; const notify = () => {};
+    const headers = () => ({}); const fetch = async () => ({ok:true,json:async()=>({retained:[]})});
     ${code}
     for (const color of ['#637b92','#84748e','#729481']) appendGalleryImage(chat[0], 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="500"><rect width="600" height="500" fill="'+color+'"/></svg>'), '图集预览');
     renderImage(0);
@@ -34,6 +35,7 @@ const ctx = vm.createContext({
   document: { querySelector: () => mes, createElement: tag => new Element(tag) },
   saveChatConditional: async () => { saves++; if (rejectSave) throw new Error('disk full'); },
   notify: (...args) => notices.push(args),
+  headers: () => ({}), fetch: async () => ({ ok: true, json: async () => ({ retained: [] }) }),
 });
 vm.runInContext(code, ctx);
 const result = () => mes.querySelector('.scene-draw-result');
@@ -74,6 +76,11 @@ const node = className => result().children.find(x => x.className === className)
   assert(!result(), 'Legacy fallback cannot resurrect deleted images');
   ctx.appendGalleryImage(message, '/again.png', 'again'); ctx.renderImage(0);
   assert.equal(node('scene-draw-result-image').src, '/again.png');
+  ctx.fetch = async () => ({ ok: false, status: 404 });
+  const beforeUnavailable = saves;
+  await ctx.changeGallery(0, 'delete', '/again.png');
+  assert.equal(message.extra.sceneDrawImages.length, 1, 'Missing backend cannot silently delete only the reference');
+  assert.equal(saves, beforeUnavailable);
   assert(saves >= 5);
   console.log('Gallery: legacy migration, append, paging, prompts/downloads, persistence, stale controls, deletion, empty gallery and save rollback passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
