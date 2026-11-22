@@ -22,8 +22,8 @@ assert.throws(() => context.parseWorkflow('{"text":"x\ny",broken}'), error => er
 conf.workflow = normalWorkflow;
 const entries = original['3'].inputs.loras.__value__;
 assert.deepEqual(entries.slice(0, 8).map(entry => entry.name), names);
-assert.equal(entries.find(entry => entry.name === 'SNOFS_krea_v1_5').strength, .8);
-assert(original['3'].inputs.text.includes('<lora:SNOFS_krea_v1_5:0.80>'));
+assert.equal(entries.find(entry => entry.name === 'SNOFS_krea_v1_6').strength, .8);
+assert(original['3'].inputs.text.includes('<lora:SNOFS_krea_v1_6:0.80>'));
 assert.equal(entries.find(entry => entry.name.startsWith('breast_size')).strength, '-1.00');
 assert.equal(entries.find(entry => entry.name.startsWith('penis_size')).strength, '-1.00');
 assert.equal(context.loraControlState().character, names[0]);

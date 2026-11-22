@@ -8,7 +8,7 @@ let generationClickHandlerBound = false;
 
 // Supplied Krea workflow, already in ComfyUI API format.
 const defaultWorkflow = {
-  "3": { "inputs": { "text": "<lora:LiRuinan_v2:1.00>, <lora:YangMaguo_v1_7500:1.00>, <lora:MouYunxuan_v1:1.00>, <lora:LanXidan_v1:1.00>, <lora:YinShiyou_v1_9500:1.00>, <lora:ZhouXinyi_v1:1.00>, <lora:breast_size_v2_krea2_loraholic:1.00>, <lora:penis_size_krea2_v2_loraholic:-1.00:-1.00>, <lora:zoom_krea2_loraholic:0.00>, <lora:SNOFS_krea_v1_5:0.80>", "loras": { "__value__": [
+  "3": { "inputs": { "text": "<lora:LiRuinan_v2:1.00>, <lora:YangMaguo_v1_7500:1.00>, <lora:MouYunxuan_v1:1.00>, <lora:LanXidan_v1:1.00>, <lora:YinShiyou_v1_9500:1.00>, <lora:ZhouXinyi_v1:1.00>, <lora:breast_size_v2_krea2_loraholic:1.00>, <lora:penis_size_krea2_v2_loraholic:-1.00:-1.00>, <lora:zoom_krea2_loraholic:0.00>, <lora:SNOFS_krea_v1_6:0.80>", "loras": { "__value__": [
     { "name": "LiRuinan_v2", "strength": "1.00", "active": true, "expanded": false, "clipStrength": "1.00", "selected": false, "locked": false },
     { "name": "YangMaguo_v1_7500", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
     { "name": "MouYunxuan_v1", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
@@ -20,7 +20,7 @@ const defaultWorkflow = {
     { "name": "breast_size_v2_krea2_loraholic", "strength": "-1.00", "active": true, "expanded": false, "clipStrength": "-1.00", "selected": false, "locked": false },
     { "name": "penis_size_krea2_v2_loraholic", "strength": "-1.00", "active": true, "expanded": false, "clipStrength": "-1.00", "selected": false, "locked": false },
     { "name": "zoom_krea2_loraholic", "strength": "0.00", "active": true, "expanded": false, "clipStrength": "0.00", "selected": false, "locked": false },
-    { "name": "SNOFS_krea_v1_5", "strength": 0.80, "active": true, "expanded": false, "clipStrength": 0.80, "selected": false, "locked": false }
+    { "name": "SNOFS_krea_v1_6", "strength": 0.80, "active": true, "expanded": false, "clipStrength": 0.80, "selected": false, "locked": false }
   ] }, "model": ["10", 0], "clip": ["6", 0] }, "class_type": "Lora Loader (LoraManager)" },
   "5": { "inputs": { "text": "{{prompt}}", "clip": ["3", 1] }, "class_type": "CLIPTextEncode" },
   "6": { "inputs": { "clip_name": "{{clipName}}", "type": "krea2", "device": "default" }, "class_type": "CLIPLoader" },
@@ -1384,7 +1384,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.6.3" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.6.4" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
