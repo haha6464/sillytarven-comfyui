@@ -373,5 +373,15 @@ assert(actions.includes('align-items: center'));
   ui.content.value = 'An empty landscape with warm lighting.';
   ui.sliders[0].value = '0'; ui.sliders[0].events.input();
   assert.equal(ui.content.value, 'An empty landscape with warm lighting.', 'No matching full name leaves the prompt unchanged');
+  context.chat[8] = { extra: { sceneDrawPrompt: '李蕊男站在窗边。', sceneDrawConfig: {
+    prompt: '李蕊男站在窗边。', aspectRatio: '1:1', loraControls: {character:'LiRuinan_v2',penisSize:0,zoom:0}
+  } } };
+  ui = openModal(8);
+  assert.equal(ui.sliders[0].value, '0', 'Existing v2 records restore the same role at the v4 slider position');
+  assert.equal(ui.sliderGroup.children[0].children[0].textContent, '李蕊男');
+  await ui.saveButton.events.click();
+  assert.equal(context.chat[8].extra.sceneDrawConfig.loraControls.character, 'LiRuinan_v4');
+  await ui.submit.events.click();
+  assert.equal(generated.at(-1)[4].character, 'LiRuinan_v4', 'Resubmitting an existing record uses v4, never v2');
   console.log('Summary modal: save without generation, per-message snapshots, reload, global fallback, zero values, discarded edits, save failures and chat switches passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
