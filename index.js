@@ -8,8 +8,8 @@ let generationClickHandlerBound = false;
 
 // Supplied Krea workflow, already in ComfyUI API format.
 const defaultWorkflow = {
-  "3": { "inputs": { "text": "<lora:LiRuinan_v4:1.00>, <lora:YangMaguo_v1_7500:1.00>, <lora:MouYunxuan_v1:1.00>, <lora:LanXidan_v1:1.00>, <lora:YinShiyou_v1_9500:1.00>, <lora:ZhouXinyi_v1:1.00>, <lora:breast_size_v2_krea2_loraholic:1.00>, <lora:penis_size_krea2_v2_loraholic:-1.00:-1.00>, <lora:zoom_krea2_loraholic:0.00>, <lora:SNOFS_krea_v1_6:0.80>", "loras": { "__value__": [
-    { "name": "LiRuinan_v4", "strength": "1.00", "active": true, "expanded": false, "clipStrength": "1.00", "selected": false, "locked": false },
+  "3": { "inputs": { "text": "<lora:LiRuinan_v2:1.00>, <lora:YangMaguo_v1_7500:1.00>, <lora:MouYunxuan_v1:1.00>, <lora:LanXidan_v1:1.00>, <lora:YinShiyou_v1_9500:1.00>, <lora:ZhouXinyi_v1:1.00>, <lora:breast_size_v2_krea2_loraholic:1.00>, <lora:penis_size_krea2_v2_loraholic:-1.00:-1.00>, <lora:zoom_krea2_loraholic:0.00>, <lora:SNOFS_krea_v1_6:0.80>", "loras": { "__value__": [
+    { "name": "LiRuinan_v2", "strength": "1.00", "active": true, "expanded": false, "clipStrength": "1.00", "selected": false, "locked": false },
     { "name": "YangMaguo_v1_7500", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
     { "name": "MouYunxuan_v1", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
     { "name": "LanXidan_v1", "strength": 1, "active": false, "expanded": false, "clipStrength": 1, "selected": false, "locked": false },
@@ -74,7 +74,7 @@ function imageSizeForRatio(ratio) {
   return Object.hasOwn(imageAspectRatios, ratio) ? { ...imageAspectRatios[ratio] } : null;
 }
 const characterLoras = [
-  { label: "李蕊男", name: "LiRuinan_v4" },
+  { label: "李蕊男", name: "LiRuinan_v2" },
   { label: "杨玛果", name: "YangMaguo_v1_7500" },
   { label: "牟纭萱", name: "MouYunxuan_v1" },
   { label: "兰茜丹", name: "LanXidan_v1" },
@@ -104,23 +104,23 @@ function loraManagerInputs(workflow) {
 }
 function characterLoraName(name) {
   const normalized = loraName(name);
-  return normalized === 'LiRuinan_v2' ? 'LiRuinan_v4' : normalized;
+  return normalized === 'LiRuinan_v4' ? 'LiRuinan_v2' : normalized;
 }
-function upgradeCharacterLoras(workflow) {
+function normalizeCharacterLoras(workflow) {
   // Operate on the parsed workflow copy, preserving paths, weights and unrelated LoRAs.
   for (const inputs of loraManagerInputs(workflow)) {
     for (const entry of inputs.loras.__value__) {
-      if (loraName(entry.name) === 'LiRuinan_v2') entry.name = entry.name.replace(/LiRuinan_v2(\.(?:safetensors|ckpt|pt))?$/i, 'LiRuinan_v4$1');
+      if (loraName(entry.name) === 'LiRuinan_v4') entry.name = entry.name.replace(/LiRuinan_v4(\.(?:safetensors|ckpt|pt))?$/i, 'LiRuinan_v2$1');
     }
     if (typeof inputs.text === 'string') inputs.text = inputs.text.replace(/<lora:([^:>]+):([^>]*)>/g, (tag, name, strength) => {
-      if (loraName(name) !== 'LiRuinan_v2') return tag;
-      return '<lora:' + name.replace(/LiRuinan_v2(\.(?:safetensors|ckpt|pt))?$/i, 'LiRuinan_v4$1') + ':' + strength + '>';
+      if (loraName(name) !== 'LiRuinan_v4') return tag;
+      return '<lora:' + name.replace(/LiRuinan_v4(\.(?:safetensors|ckpt|pt))?$/i, 'LiRuinan_v2$1') + ':' + strength + '>';
     });
   }
   return workflow;
 }
 function parseWorkflow(text) {
-  try { return upgradeCharacterLoras(JSON.parse(text)); } catch (originalError) {
+  try { return normalizeCharacterLoras(JSON.parse(text)); } catch (originalError) {
     // Workflow editors may insert literal line breaks inside a JSON string.
     let quoted = false, escaped = false, repaired = "";
     for (const char of String(text)) {
@@ -134,7 +134,7 @@ function parseWorkflow(text) {
       }
     }
     if (repaired === text) throw originalError;
-    return upgradeCharacterLoras(JSON.parse(repaired));
+    return normalizeCharacterLoras(JSON.parse(repaired));
   }
 }
 function loraControlState() {
@@ -1476,7 +1476,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.7.2" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.7.3" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);

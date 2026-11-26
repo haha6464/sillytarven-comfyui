@@ -54,7 +54,7 @@ vm.runInContext(variables + workflowCode + imageCode + galleryCode + generationC
       assert(Number.isSafeInteger(request.workflow['9'].inputs.seed) && request.workflow['9'].inputs.seed >= 0, 'Both proxy and direct transports receive a resolved random seed');
       const loras = request.workflow['3'].inputs.loras.__value__;
       assert.equal(loras.find(entry => entry.name === controls.character).active, true);
-      assert.equal(loras.find(entry => entry.name === 'LiRuinan_v4').active, false);
+      assert.equal(loras.find(entry => entry.name === 'LiRuinan_v2').active, false);
       assert.equal(loras.find(entry => entry.name === 'zoom_krea2_loraholic').strength, controls.zoom);
       assert.equal(message.extra.sceneDrawLoraControls.character, controls.character);
       assert.equal(message.extra.sceneDrawLoraControls.zoom, controls.zoom);
