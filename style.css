@@ -50,6 +50,8 @@
 .scene-draw-workflow-step.failed { color: #bf4545; }
 .scene-draw-result { position: relative; display: inline-block; max-width: 100%; margin: 10px 0; }
 .scene-draw-result-image { display: block; max-width: min(100%, 720px); max-height: 900px; border-radius: 8px; cursor: zoom-in; }
+.scene-draw-result-image[hidden] { display: none; }
+.scene-draw-result--deferred { display: block; width: min(100%, 720px); max-height: 900px; border-radius: 8px; background: rgba(128, 128, 128, .08); }
 .scene-draw-result-download { position: absolute; z-index: 1; top: 8px; right: 8px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(0, 0, 0, .62); color: #fff; text-decoration: none; opacity: 0; transition: opacity .15s ease; }
 .scene-draw-result:hover .scene-draw-result-download, .scene-draw-result-download:focus-visible { opacity: 1; }
 .scene-draw-gallery-control { appearance: none; position: absolute; z-index: 2; display: grid; place-items: center; width: 36px; height: 40px; min-width: 36px; margin: 0; padding: 0; border: 0; border-radius: 8px; background: rgba(0, 0, 0, .62); color: #fff; font: 28px/1 sans-serif; cursor: pointer; touch-action: manipulation; }

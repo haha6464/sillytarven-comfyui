@@ -11,6 +11,7 @@ if (process.argv[2] === '--preview') {
     const mes = document.createElement('div'); mes.className = 'mes'; mes.setAttribute('mesid', '0'); document.body.append(mes);
     const chat = [{extra:{}}]; const saveChatConditional = async () => {}; const notify = () => {};
     const headers = () => ({}); const fetch = async () => ({ok:true,json:async()=>({retained:[]})});
+    const imageSizeForRatio = () => ({width:600,height:500});
     ${code}
     for (const color of ['#637b92','#84748e','#729481']) appendGalleryImage(chat[0], 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="500"><rect width="600" height="500" fill="'+color+'"/></svg>'), '图集预览');
     renderImage(0);
@@ -20,11 +21,13 @@ if (process.argv[2] === '--preview') {
   process.exit(0);
 }
 class Element {
-  constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; this.attrs = {}; }
+  constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; this.attrs = {}; this.style = {}; this.events = {}; this.isConnected = true; }
+  get classList() { return { add: name => { this.className += ' ' + name; }, remove: name => { this.className = this.className.split(' ').filter(x=>x!==name).join(' '); } }; }
+  addEventListener(name, callback) { this.events[name] = callback; }
   append(...nodes) { this.children.push(...nodes); }
   setAttribute(key, value) { this.attrs[key] = value; }
-  remove() { this.removed = true; }
-  querySelector(selector) { return selector === '.scene-draw-result' ? this.children.findLast(x => x.className === 'scene-draw-result' && !x.removed) : null; }
+  remove() { this.removed = true; this.isConnected = false; }
+  querySelector(selector) { return selector === '.scene-draw-result' ? this.children.findLast(x => x.className?.split(' ').includes('scene-draw-result') && !x.removed) : null; }
 }
 const mes = new Element('div');
 let message = { extra: { sceneDrawImage: '/old.png', sceneDrawPrompt: 'old scene' } };
@@ -36,6 +39,7 @@ const ctx = vm.createContext({
   saveChatConditional: async () => { saves++; if (rejectSave) throw new Error('disk full'); },
   notify: (...args) => notices.push(args),
   headers: () => ({}), fetch: async () => ({ ok: true, json: async () => ({ retained: [] }) }),
+  imageSizeForRatio: () => null,
 });
 vm.runInContext(code, ctx);
 const result = () => mes.querySelector('.scene-draw-result');
@@ -87,5 +91,49 @@ const node = className => result().children.find(x => x.className === className)
   assert.equal(message.extra.sceneDrawImages.length, 1, 'Missing backend cannot silently delete only the reference');
   assert.equal(saves, beforeUnavailable);
   assert(saves >= 5);
+  // A long chat containing 100 galleries of eight images must not request 800 originals on render.
+  const requests = [], targets = new Set();
+  let observer;
+  class LazyElement extends Element {
+    set src(value) { this.imageSource = value; requests.push(value); }
+    get src() { return this.imageSource; }
+  }
+  ctx.IntersectionObserver = class {
+    constructor(callback, options) { this.callback = callback; observer = this; assert.equal(options.rootMargin,'150px 0px'); }
+    observe(target) { targets.add(target); }
+    unobserve(target) { targets.delete(target); }
+  };
+  const lazyMessages = Array.from({length:100}, (_,i) => ({extra:{sceneDrawImages:Array.from({length:8},(_,j)=>({url:`/original-${i}-${j}.png`,prompt:'scene'})),sceneDrawImageIndex:0}}));
+  const lazyElements = lazyMessages.map(()=>new Element('div'));
+  ctx.chat = lazyMessages;
+  ctx.document.createElement = tag => new LazyElement(tag);
+  ctx.document.querySelector = selector => lazyElements[Number(selector.match(/mesid="(\d+)"/)[1])];
+  for(let i=0;i<100;i++)ctx.renderImage(i);
+  assert.equal(requests.length,0,'Rendering offscreen galleries sets no original image URLs');
+  assert.equal(targets.size,100);
+  const gallery50=lazyElements[50].querySelector('.scene-draw-result');
+  observer.callback([{target:gallery50,isIntersecting:false}]);
+  assert.equal(requests.length,0);
+  observer.callback([{target:gallery50,isIntersecting:true}]);
+  assert.deepEqual(requests,['/original-50-0.png'],'Visibility loads only the selected original, not all eight');
+  const visibleImage=gallery50.children.find(x=>x.className==='scene-draw-result-image');
+  ctx.deferGalleryImages(gallery50,lazyMessages[50],visibleImage,visibleImage.src);
+  assert(!targets.has(gallery50),'In-flight loads cannot be queued again by message decoration');
+  visibleImage.events.load();
+  assert.equal(visibleImage.hidden,false);
+  await ctx.changeGallery(50,'next','/original-50-0.png');
+  const nextGallery=lazyElements[50].querySelector('.scene-draw-result');
+  assert.equal(requests.length,1,'Flipping a page is still deferred until its gallery is visible');
+  observer.callback([{target:nextGallery,isIntersecting:true}]);
+  assert.deepEqual(requests,['/original-50-0.png','/original-50-1.png']);
+  const staleGallery=lazyElements[60].querySelector('.scene-draw-result');
+  ctx.chat[60]={extra:{}};
+  observer.callback([{target:staleGallery,isIntersecting:true}]);
+  assert.equal(requests.length,2,'Changing chats before visibility cannot load the old chat image');
+  const removedGallery=lazyElements[61].querySelector('.scene-draw-result');
+  removedGallery.isConnected=false;
+  observer.callback([{target:removedGallery,isIntersecting:true}]);
+  assert.equal(requests.length,2,'Detached galleries cannot start downloads');
+  console.log('Viewport loading: 100 galleries x 8 originals, no offscreen requests, selected-image-only loading, page flips and stale targets passed.');
   console.log('Gallery: legacy migration, append, paging, prompts/downloads, persistence, stale controls, deletion, empty gallery and save rollback passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

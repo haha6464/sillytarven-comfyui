@@ -701,6 +701,40 @@ function galleryImages(message) {
   if (Array.isArray(extra?.sceneDrawImages)) return extra.sceneDrawImages;
   return extra?.sceneDrawImage ? [{ url: extra.sceneDrawImage, prompt: extra.sceneDrawPrompt || "" }] : [];
 }
+let galleryImageObserver;
+const deferredGalleryImages = new Map();
+const activeGalleryLoads = new WeakSet();
+function loadGalleryImages(result, entry) {
+  deferredGalleryImages.delete(result);
+  galleryImageObserver?.unobserve(result);
+  if (result.isConnected === false || chat[Number(result.dataset.sceneDrawMesid)] !== entry.message) return;
+  const { image, url } = entry;
+  activeGalleryLoads.add(result);
+  const reveal = () => {
+    image.hidden = false;
+    result.classList.remove('scene-draw-result--deferred');
+    result.style.aspectRatio = '';
+    activeGalleryLoads.delete(result);
+  };
+  image.addEventListener('load', reveal, { once: true });
+  image.addEventListener('error', reveal, { once: true });
+  image.src = url;
+}
+function deferGalleryImages(result, message, image, url) {
+  if (deferredGalleryImages.has(result) || activeGalleryLoads.has(result)) return;
+  const entry = { message, image, url };
+  if (typeof IntersectionObserver === 'undefined') { loadGalleryImages(result, entry); return; }
+  galleryImageObserver ||= new IntersectionObserver(entries => {
+    for (const item of entries) {
+      const pending = deferredGalleryImages.get(item.target);
+      if (!pending) continue;
+      if (item.target.isConnected === false) { galleryImageObserver.unobserve(item.target); deferredGalleryImages.delete(item.target); }
+      else if (item.isIntersecting) loadGalleryImages(item.target, pending);
+    }
+  }, { rootMargin: '150px 0px', threshold: 0 });
+  deferredGalleryImages.set(result, entry);
+  galleryImageObserver.observe(result);
+}
 function appendGalleryImage(message, url, prompt) {
   const images = [...galleryImages(message), { url, prompt }];
   message.extra ||= {};
@@ -770,7 +804,8 @@ async function changeGallery(mesId, action, expectedUrl) {
 function renderImage(mesId, imageUrl, prompt, messageElement) {
   const mes = messageElement || document.querySelector('.mes[mesid="' + CSS.escape(String(mesId)) + '"]');
   if (!mes) return;
-  mes.querySelector(".scene-draw-result")?.remove();
+  const previous = mes.querySelector(".scene-draw-result");
+  if (previous) { galleryImageObserver?.unobserve(previous); deferredGalleryImages.delete(previous); previous.remove(); }
   const message = chat[Number(mesId)];
   const images = galleryImages(message);
   if (!images.length) return;
@@ -779,6 +814,9 @@ function renderImage(mesId, imageUrl, prompt, messageElement) {
   prompt = images[index].prompt;
   const result = document.createElement("div");
   result.className = "scene-draw-result";
+  result.classList.add('scene-draw-result--deferred');
+  const size = imageSizeForRatio(message.extra?.sceneDrawAspectRatio || message.extra?.sceneDrawConfig?.aspectRatio);
+  result.style.aspectRatio = size ? size.width + '/' + size.height : '1/1';
   result.dataset.sceneDrawMesid = String(mesId);
   const control = (action, label, glyph) => {
     const button = document.createElement("button");
@@ -810,10 +848,14 @@ function renderImage(mesId, imageUrl, prompt, messageElement) {
   download.innerHTML = '<i class="fa-solid fa-download"></i>';
   const image = document.createElement("img");
   image.className = "scene-draw-result-image";
-  image.src = imageUrl; image.alt = prompt; image.title = "点击全屏查看图片";
+  image.hidden = true;
+  image.decoding = 'async';
+  image.dataset.sceneDrawSource = imageUrl;
+  image.alt = prompt; image.title = "点击全屏查看图片";
   result.append(download, image);
   const text = mes.querySelector(".mes_text");
   if (text) text.after(result); else mes.append(result);
+  deferGalleryImages(result, message, image, imageUrl);
 }
 async function generateFromSummary(mesId, message, prompt, aspectRatio, loraControls) {
   const generationKey = String(mesId);
@@ -913,9 +955,21 @@ function decorateMessage(mes) {
   const message = chat[Number(mesId)];
   if (!message || message.is_user || message.is_system) return;
   mes.querySelectorAll(".scene-draw-button, .scene-draw-workflow").forEach((element) => element.remove());
-  if (galleryImages(message).length && !mes.querySelector(".scene-draw-result")) renderImage(mesId, null, null, mes);
+  if (galleryImages(message).length) {
+    const existing = mes.querySelector('.scene-draw-result');
+    if (!existing) renderImage(mesId, null, null, mes);
+    else if (existing.classList.contains('scene-draw-result--deferred')) {
+      const image = existing.querySelector('.scene-draw-result-image');
+      if (image?.dataset.sceneDrawSource) deferGalleryImages(existing, message, image, image.dataset.sceneDrawSource);
+    }
+  }
 }
-function decorateMessages() { document.querySelectorAll(".mes[mesid]").forEach(decorateMessage); }
+function decorateMessages() {
+  for (const result of deferredGalleryImages.keys()) if (result.isConnected === false) {
+    galleryImageObserver?.unobserve(result); deferredGalleryImages.delete(result);
+  }
+  document.querySelectorAll(".mes[mesid]").forEach(decorateMessage);
+}
 function showSummaryModal(mesId) {
   const message = chat[Number(mesId)];
   const savedConfig = message?.extra?.sceneDrawConfig;
@@ -1402,7 +1456,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.6.5" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.7.0" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
