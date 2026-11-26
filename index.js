@@ -104,23 +104,21 @@ function loraManagerInputs(workflow) {
 }
 function characterLoraName(name) {
   const normalized = loraName(name);
-  return normalized === 'LiRuinan_v4' ? 'LiRuinan_v2' : normalized;
+  return /^LiRuinan_v\d+(?:[._-][a-z0-9]+)*$/i.test(normalized) ? 'LiRuinan' : normalized;
 }
-function normalizeCharacterLoras(workflow) {
-  // Operate on the parsed workflow copy, preserving paths, weights and unrelated LoRAs.
-  for (const inputs of loraManagerInputs(workflow)) {
-    for (const entry of inputs.loras.__value__) {
-      if (loraName(entry.name) === 'LiRuinan_v4') entry.name = entry.name.replace(/LiRuinan_v4(\.(?:safetensors|ckpt|pt))?$/i, 'LiRuinan_v2$1');
-    }
-    if (typeof inputs.text === 'string') inputs.text = inputs.text.replace(/<lora:([^:>]+):([^>]*)>/g, (tag, name, strength) => {
-      if (loraName(name) !== 'LiRuinan_v4') return tag;
-      return '<lora:' + name.replace(/LiRuinan_v4(\.(?:safetensors|ckpt|pt))?$/i, 'LiRuinan_v2$1') + ':' + strength + '>';
-    });
-  }
-  return workflow;
+function workflowCharacterLoras(entries) {
+  const known = entry => characterLoras.some(item => characterLoraName(item.name) === characterLoraName(entry.name));
+  const hasCharacters = entries.some(known);
+  return characterLoras.flatMap(character => {
+    const matching = entries.filter(entry => characterLoraName(entry.name) === characterLoraName(character.name));
+    // If several versions exist, follow the active one, otherwise the first workflow entry.
+    const entry = matching.find(item => item.active) || matching[0];
+    if (entry) return [{ ...character, name: loraName(entry.name) }];
+    return hasCharacters && addedCharacterLoras.includes(character.name) ? [character] : [];
+  });
 }
 function parseWorkflow(text) {
-  try { return normalizeCharacterLoras(JSON.parse(text)); } catch (originalError) {
+  try { return JSON.parse(text); } catch (originalError) {
     // Workflow editors may insert literal line breaks inside a JSON string.
     let quoted = false, escaped = false, repaired = "";
     for (const char of String(text)) {
@@ -134,17 +132,16 @@ function parseWorkflow(text) {
       }
     }
     if (repaired === text) throw originalError;
-    return normalizeCharacterLoras(JSON.parse(repaired));
+    return JSON.parse(repaired);
   }
 }
 function loraControlState() {
   const conf = settings();
   let entries = [];
   try { entries = loraManagerInputs(parseWorkflow(conf.workflow)).flatMap(inputs => inputs.loras.__value__); } catch { /* Workflow validation happens at submission. */ }
-  const hasCharacters = entries.some(entry => characterLoras.some(character => loraName(entry.name) === character.name));
-  const characters = characterLoras.filter(character => entries.some(entry => loraName(entry.name) === character.name) || (hasCharacters && addedCharacterLoras.includes(character.name)));
+  const characters = workflowCharacterLoras(entries);
   const activeCharacter = entries.find(entry => entry.active && characters.some(character => character.name === loraName(entry.name)));
-  const character = characters.find(item => item.name === characterLoraName(conf.lastCharacterLora))?.name || loraName(activeCharacter?.name) || characters[0]?.name || null;
+  const character = characters.find(item => characterLoraName(item.name) === characterLoraName(conf.lastCharacterLora))?.name || loraName(activeCharacter?.name) || characters[0]?.name || null;
   const zoom = entries.find(entry => loraName(entry.name) === zoomLoraName);
   const penisSize = entries.find(entry => loraName(entry.name) === penisSizeLoraName);
   return { characters, character, zoomSupported: Boolean(zoom), zoom: zoomLoraValue(conf.lastZoomLora) ?? zoomLoraValue(zoom?.strength) ?? 0,
@@ -153,14 +150,16 @@ function loraControlState() {
 function applyLoraControls(workflow, controls) {
   if (!controls || (!controls.character && controls.zoom == null && controls.penisSize == null)) return;
   const inputsList = loraManagerInputs(workflow);
-  const character = characterLoraName(controls.character) || null;
+  const availableCharacters = workflowCharacterLoras(inputsList.flatMap(inputs => inputs.loras.__value__));
+  const selectedCharacter = availableCharacters.find(item => characterLoraName(item.name) === characterLoraName(controls.character));
+  const character = selectedCharacter?.name || loraName(controls.character) || null;
   if (addedCharacterLoras.includes(character) && !inputsList.some(inputs => inputs.loras.__value__.some(entry => loraName(entry.name) === character))) {
-    const target = inputsList.find(inputs => inputs.loras.__value__.some(entry => characterLoras.some(item => item.name === loraName(entry.name))));
+    const target = inputsList.find(inputs => inputs.loras.__value__.some(entry => characterLoras.some(item => characterLoraName(item.name) === characterLoraName(entry.name))));
     if (target) target.loras.__value__.push({ name: character, strength: 1, active: false, expanded: false, clipStrength: 1, selected: false, locked: false });
   }
   const zoom = zoomLoraValue(controls.zoom);
   const penisSize = penisSizeLoraValue(controls.penisSize);
-  if (character && (!characterLoras.some(item => item.name === character) || !inputsList.some(inputs => inputs.loras.__value__.some(entry => loraName(entry.name) === character)))) throw new Error("工作流中找不到所选角色 LoRA。");
+  if (character && (!selectedCharacter || !inputsList.some(inputs => inputs.loras.__value__.some(entry => loraName(entry.name) === character)))) throw new Error("工作流中找不到所选角色 LoRA。");
   if (controls.zoom !== null && controls.zoom !== undefined && (zoom === null || !inputsList.some(inputs => inputs.loras.__value__.some(entry => loraName(entry.name) === zoomLoraName)))) throw new Error("工作流中找不到 zoom LoRA 或参数无效。");
   if (controls.penisSize != null && (penisSize === null || !inputsList.some(inputs => inputs.loras.__value__.some(entry => loraName(entry.name) === penisSizeLoraName)))) throw new Error("工作流中找不到 penis_size LoRA 或参数无效。");
   const strengthControls = [[zoomLoraName, zoom], [penisSizeLoraName, penisSize]].filter(([, value]) => value !== null);
@@ -168,7 +167,7 @@ function applyLoraControls(workflow, controls) {
     const entries = inputs.loras.__value__;
     for (const entry of entries) {
       const name = loraName(entry.name);
-      if (character && characterLoras.some(item => item.name === name)) entry.active = name === character;
+      if (character && characterLoras.some(item => characterLoraName(item.name) === characterLoraName(name))) entry.active = name === character;
       const strengthControl = strengthControls.find(([target]) => name === target);
       if (strengthControl) {
         entry.active = true;
@@ -178,7 +177,7 @@ function applyLoraControls(workflow, controls) {
     }
     // Keep the textual representation in sync, without touching unrelated LoRA tags.
     if (typeof inputs.text !== "string") continue;
-    let text = inputs.text.replace(/<lora:([^:>]+):[^>]*>/g, (tag, name) => (character && characterLoras.some(item => item.name === loraName(name))) || strengthControls.some(([target]) => loraName(name) === target) ? "" : tag);
+    let text = inputs.text.replace(/<lora:([^:>]+):[^>]*>/g, (tag, name) => (character && characterLoras.some(item => characterLoraName(item.name) === characterLoraName(name))) || strengthControls.some(([target]) => loraName(name) === target) ? "" : tag);
     text = text.replace(/(?:,\s*){2,}/g, ", ").replace(/^\s*,\s*|\s*,\s*$/g, "").trim();
     const selected = entries.find(entry => loraName(entry.name) === character);
     const zoomEntry = entries.find(entry => loraName(entry.name) === zoomLoraName);
@@ -1033,7 +1032,8 @@ function showSummaryModal(mesId) {
   if (savedConfig?.loraControls) {
     const saved = savedConfig.loraControls;
     const savedCharacter = characterLoraName(saved.character);
-    if (loraState.characters.some(item => item.name === savedCharacter)) loraState.character = savedCharacter;
+    const workflowCharacter = loraState.characters.find(item => characterLoraName(item.name) === savedCharacter);
+    if (workflowCharacter) loraState.character = workflowCharacter.name;
     loraState.penisSize = penisSizeLoraValue(saved.penisSize) ?? loraState.penisSize;
     loraState.zoom = zoomLoraValue(saved.zoom) ?? loraState.zoom;
   }
@@ -1476,7 +1476,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.7.3" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.7.4" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);

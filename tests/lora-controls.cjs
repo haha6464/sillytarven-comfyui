@@ -96,18 +96,33 @@ assert.equal(context.zoomLoraValue(-99), -12);
 assert.equal(context.zoomLoraValue(99), 0);
 assert.equal(context.zoomLoraValue(null), null);
 assert.equal(context.loraName('folder\\LiRuinan_v2.safetensors'), names[0]);
-const oldWorkflow = JSON.stringify(original).replaceAll('LiRuinan_v2', 'LiRuinan_v4');
-conf.workflow = oldWorkflow;
-conf.lastCharacterLora = 'LiRuinan_v4';
-assert.equal(context.loraControlState().character, 'LiRuinan_v2');
-const upgradedRole = context.workflowWithPrompt('scene', null, {character:'LiRuinan_v4'});
-assert(!JSON.stringify(upgradedRole).includes('LiRuinan_v4'), 'Existing v4 workflows and saved selections now submit only v2');
-assert.equal(upgradedRole['3'].inputs.loras.__value__[0].name, 'LiRuinan_v2');
-assert.equal(conf.workflow, oldWorkflow, 'Other saved workflow settings are not overwritten');
-const oldPathWorkflow = oldWorkflow.replaceAll('LiRuinan_v4', 'characters/LiRuinan_v4.safetensors');
-const pathUpgrade = context.parseWorkflow(oldPathWorkflow);
-assert.equal(pathUpgrade['3'].inputs.loras.__value__[0].name, 'characters/LiRuinan_v2.safetensors');
-assert(pathUpgrade['3'].inputs.text.includes('characters/LiRuinan_v2.safetensors'));
+for (const version of ['v2','v4','v7_12000']) {
+  for (const filename of ['LiRuinan_'+version, 'characters/LiRuinan_'+version+'.safetensors']) {
+    conf.workflow = JSON.stringify(original).replaceAll('LiRuinan_v2', filename);
+    conf.lastCharacterLora = 'LiRuinan_v4';
+    assert.equal(context.loraControlState().character, 'LiRuinan_'+version);
+    const generated = context.workflowWithPrompt('scene', null, {character:'LiRuinan_v2'});
+    assert.equal(generated['3'].inputs.loras.__value__[0].name, filename, 'Workflow filename, path and extension decide the version');
+    assert.equal(generated['3'].inputs.loras.__value__[0].strength, '1.00');
+    assert(generated['3'].inputs.text.includes('<lora:'+filename+':'));
+    const otherRole = context.workflowWithPrompt('scene', null, {character:'ZhangYihuai_v1'});
+    assert.equal(otherRole['3'].inputs.loras.__value__[0].active, false, 'Any Li Ruinan version deactivates when another character is selected');
+    assert(!otherRole['3'].inputs.text.includes('<lora:'+filename+':'));
+    assert.equal(JSON.stringify(context.parseWorkflow(conf.workflow)), conf.workflow, 'Parsing never rewrites the user workflow');
+  }
+}
+const multiple = JSON.parse(JSON.stringify(original));
+multiple['3'].inputs.loras.__value__[0].active = false;
+multiple['3'].inputs.loras.__value__.push({name:'LiRuinan_v4',strength:1.2,clipStrength:1.2,active:true});
+conf.workflow = JSON.stringify(multiple);
+assert.equal(context.loraControlState().characters.filter(x=>x.label==='李蕊男').length,1);
+assert.equal(context.loraControlState().character,'LiRuinan_v4','If versions coexist, choose the active workflow version');
+const mixedResult = context.workflowWithPrompt('scene',null,{character:'LiRuinan_v2'});
+assert.equal(mixedResult['3'].inputs.loras.__value__[0].active,false);
+assert.equal(mixedResult['3'].inputs.loras.__value__.at(-1).active,true);
+multiple['3'].inputs.loras.__value__.at(-1).active = false;
+conf.workflow = JSON.stringify(multiple);
+assert.equal(context.loraControlState().character,'LiRuinan_v2','Without an active version, choose the first workflow entry');
 conf.workflow = JSON.stringify(original);
 assert.throws(() => context.workflowWithPrompt('scene', null, { character: 'missing', zoom: 0 }), /角色 LoRA/);
 const partial = JSON.parse(conf.workflow);
