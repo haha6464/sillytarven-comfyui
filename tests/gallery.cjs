@@ -24,6 +24,8 @@ class Element {
   constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; this.attrs = {}; this.style = {}; this.events = {}; this.isConnected = true; }
   get classList() { return { add: name => { this.className += ' ' + name; }, remove: name => { this.className = this.className.split(' ').filter(x=>x!==name).join(' '); } }; }
   addEventListener(name, callback) { this.events[name] = callback; }
+  removeEventListener(name, callback) { if(this.events[name]===callback)delete this.events[name]; }
+  getAttribute(key) { return key === 'src' ? this.src : this.attrs[key]; }
   append(...nodes) { this.children.push(...nodes); }
   setAttribute(key, value) { this.attrs[key] = value; }
   remove() { this.removed = true; this.isConnected = false; }
@@ -134,6 +136,23 @@ const node = className => result().children.find(x => x.className === className)
   removedGallery.isConnected=false;
   observer.callback([{target:removedGallery,isIntersecting:true}]);
   assert.equal(requests.length,2,'Detached galleries cannot start downloads');
+  const cloningGallery = lazyElements[51].querySelector('.scene-draw-result');
+  observer.callback([{target:cloningGallery,isIntersecting:true}]);
+  const originalImage = cloningGallery.children.find(x=>x.className==='scene-draw-result-image');
+  const staleLoad = originalImage.events.load;
+  const clonedImage = new LazyElement('img');
+  clonedImage.className = 'scene-draw-result-image'; clonedImage.hidden = true;
+  clonedImage.imageSource = originalImage.src; clonedImage.complete = true; clonedImage.naturalWidth = 600; clonedImage.naturalHeight = 450;
+  cloningGallery.children[cloningGallery.children.indexOf(originalImage)] = clonedImage;
+  originalImage.isConnected = false;
+  ctx.deferGalleryImages(cloningGallery,lazyMessages[51],clonedImage,clonedImage.src);
+  assert(targets.has(cloningGallery),'Replacing the img re-arms observation even though its gallery was already loading');
+  const requestsBeforeCache = requests.length;
+  observer.callback([{target:cloningGallery,isIntersecting:true}]);
+  assert.equal(clonedImage.hidden,false,'Cached cloned images are revealed without waiting for an event that already fired');
+  assert.equal(requests.length,requestsBeforeCache,'Cached restoration does not reassign src or refetch');
+  staleLoad();
+  assert.equal(clonedImage.hidden,false,'Stale callbacks cannot change the replacement image state');
   console.log('Viewport loading: 100 galleries x 8 originals, no offscreen requests, selected-image-only loading, page flips and stale targets passed.');
   console.log('Gallery: legacy migration, append, paging, prompts/downloads, persistence, stale controls, deletion, empty gallery and save rollback passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

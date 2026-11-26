@@ -703,25 +703,45 @@ function galleryImages(message) {
 }
 let galleryImageObserver;
 const deferredGalleryImages = new Map();
-const activeGalleryLoads = new WeakSet();
+const activeGalleryLoads = new WeakMap();
 function loadGalleryImages(result, entry) {
   deferredGalleryImages.delete(result);
   galleryImageObserver?.unobserve(result);
   if (result.isConnected === false || chat[Number(result.dataset.sceneDrawMesid)] !== entry.message) return;
   const { image, url } = entry;
-  activeGalleryLoads.add(result);
+  activeGalleryLoads.get(result)?.cleanup?.();
+  activeGalleryLoads.set(result, entry);
   const reveal = () => {
+    if (activeGalleryLoads.get(result) !== entry) return;
+    entry.cleanup();
+    activeGalleryLoads.delete(result);
+    if (result.isConnected === false || image.isConnected === false) return;
     image.hidden = false;
     result.classList.remove('scene-draw-result--deferred');
     result.style.aspectRatio = '';
-    activeGalleryLoads.delete(result);
+  };
+  entry.cleanup = () => {
+    image.removeEventListener('load', reveal);
+    image.removeEventListener('error', reveal);
   };
   image.addEventListener('load', reveal, { once: true });
   image.addEventListener('error', reveal, { once: true });
-  image.src = url;
+  if (image.getAttribute('src') === url && image.complete && image.naturalWidth > 0) reveal();
+  else image.src = url;
 }
 function deferGalleryImages(result, message, image, url) {
-  if (deferredGalleryImages.has(result) || activeGalleryLoads.has(result)) return;
+  const pending = deferredGalleryImages.get(result);
+  const active = activeGalleryLoads.get(result);
+  if ((pending?.image === image && pending.url === url) || (active?.image === image && active.url === url)) return;
+  // A beautifier may replace just the img while keeping its surrounding gallery.
+  if (active) { active.cleanup?.(); activeGalleryLoads.delete(result); }
+  if (image.hidden) {
+    result.classList.add('scene-draw-result--deferred');
+    if (!result.style.aspectRatio) {
+      const size = imageSizeForRatio(message.extra?.sceneDrawAspectRatio || message.extra?.sceneDrawConfig?.aspectRatio);
+      result.style.aspectRatio = image.naturalWidth && image.naturalHeight ? image.naturalWidth + '/' + image.naturalHeight : size ? size.width + '/' + size.height : '1/1';
+    }
+  }
   const entry = { message, image, url };
   if (typeof IntersectionObserver === 'undefined') { loadGalleryImages(result, entry); return; }
   galleryImageObserver ||= new IntersectionObserver(entries => {
@@ -958,9 +978,9 @@ function decorateMessage(mes) {
   if (galleryImages(message).length) {
     const existing = mes.querySelector('.scene-draw-result');
     if (!existing) renderImage(mesId, null, null, mes);
-    else if (existing.classList.contains('scene-draw-result--deferred')) {
+    else {
       const image = existing.querySelector('.scene-draw-result-image');
-      if (image?.dataset.sceneDrawSource) deferGalleryImages(existing, message, image, image.dataset.sceneDrawSource);
+      if (image?.dataset.sceneDrawSource && (image.hidden || existing.classList.contains('scene-draw-result--deferred'))) deferGalleryImages(existing, message, image, image.dataset.sceneDrawSource);
     }
   }
 }
@@ -1456,7 +1476,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.7.1" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.7.2" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
