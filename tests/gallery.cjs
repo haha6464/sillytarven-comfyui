@@ -98,7 +98,7 @@ const node = className => result().children.find(x => x.className === className)
   let observer;
   const chatRoot = {};
   class LazyElement extends Element {
-    set src(value) { this.imageSource = value; requests.push(value); }
+    set src(value) { assert.equal(this.fetchPriority,'high','Priority must be set before starting the original image request'); this.imageSource = value; requests.push(value); }
     get src() { return this.imageSource; }
   }
   ctx.IntersectionObserver = class {

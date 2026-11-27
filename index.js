@@ -713,6 +713,8 @@ function loadGalleryImages(result, entry) {
   clearDeferredGallery(result);
   if (result.isConnected === false || chat[Number(result.dataset.sceneDrawMesid)] !== entry.message) return;
   const { image, url } = entry;
+  // Hidden images otherwise stay low priority behind unrelated pending API requests.
+  image.fetchPriority = 'high';
   activeGalleryLoads.get(result)?.cleanup?.();
   activeGalleryLoads.set(result, entry);
   const reveal = () => {
@@ -1525,7 +1527,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.7.6" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.7.7" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   observeGalleryChanges();
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
