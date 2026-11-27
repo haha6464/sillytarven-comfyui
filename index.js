@@ -701,6 +701,7 @@ function galleryImages(message) {
   return extra?.sceneDrawImage ? [{ url: extra.sceneDrawImage, prompt: extra.sceneDrawPrompt || "" }] : [];
 }
 let galleryImageObserver;
+let galleryImageRoot;
 const deferredGalleryImages = new Map();
 const activeGalleryLoads = new WeakMap();
 function loadGalleryImages(result, entry) {
@@ -742,17 +743,23 @@ function deferGalleryImages(result, message, image, url) {
     }
   }
   const entry = { message, image, url };
-  if (typeof IntersectionObserver === 'undefined') { loadGalleryImages(result, entry); return; }
-  galleryImageObserver ||= new IntersectionObserver(entries => {
-    for (const item of entries) {
-      const pending = deferredGalleryImages.get(item.target);
-      if (!pending) continue;
-      if (item.target.isConnected === false) { galleryImageObserver.unobserve(item.target); deferredGalleryImages.delete(item.target); }
-      else if (item.isIntersecting) loadGalleryImages(item.target, pending);
-    }
-  }, { rootMargin: '150px 0px', threshold: 0 });
+  if (typeof IntersectionObserver === 'undefined' || (image.getAttribute('src') === url && image.complete && image.naturalWidth > 0)) { loadGalleryImages(result, entry); return; }
   deferredGalleryImages.set(result, entry);
-  galleryImageObserver.observe(result);
+  // The chat clips its contents. A viewport margin cannot extend that inner clip.
+  const root = result.closest?.('#chat') || null;
+  if (!galleryImageObserver || galleryImageRoot !== root) {
+    galleryImageObserver?.disconnect();
+    galleryImageRoot = root;
+    galleryImageObserver = new IntersectionObserver(entries => {
+      for (const item of entries) {
+        const pending = deferredGalleryImages.get(item.target);
+        if (!pending) continue;
+        if (item.target.isConnected === false) { galleryImageObserver.unobserve(item.target); deferredGalleryImages.delete(item.target); }
+        else if (item.isIntersecting) loadGalleryImages(item.target, pending);
+      }
+    }, { root, rootMargin: '600px 0px', threshold: 0 });
+    for (const target of deferredGalleryImages.keys()) galleryImageObserver.observe(target);
+  } else galleryImageObserver.observe(result);
 }
 function appendGalleryImage(message, url, prompt) {
   const images = [...galleryImages(message), { url, prompt }];
@@ -988,6 +995,34 @@ function decorateMessages() {
     galleryImageObserver?.unobserve(result); deferredGalleryImages.delete(result);
   }
   document.querySelectorAll(".mes[mesid]").forEach(decorateMessage);
+}
+function observeGalleryChanges() {
+  const pending = new Set();
+  let frame;
+  const observer = new MutationObserver(records => {
+    for (const record of records) {
+      const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+      const message = target?.closest('.mes[mesid]');
+      if (message) pending.add(message);
+      for (const node of record.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        if (node.matches('.mes[mesid]')) pending.add(node);
+        node.querySelectorAll('.mes[mesid]').forEach(mes => pending.add(mes));
+      }
+    }
+    if (!pending.size || frame !== undefined) return;
+    frame = requestAnimationFrame(() => {
+      frame = undefined;
+      for (const result of deferredGalleryImages.keys()) if (!result.isConnected) {
+        galleryImageObserver?.unobserve(result); deferredGalleryImages.delete(result);
+      }
+      const messages = [...pending];
+      pending.clear();
+      for (const mes of messages) if (mes.isConnected) decorateMessage(mes);
+    });
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  return observer;
 }
 function showSummaryModal(mesId) {
   const message = chat[Number(mesId)];
@@ -1476,9 +1511,9 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.7.4" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.7.5" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
-  new MutationObserver(decorateMessages).observe(document.body, { childList: true, subtree: true });
+  observeGalleryChanges();
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);
   eventSource.on(event_types.CHAT_CHANGED, recoverAfterChatLoad);
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => setTimeout(() => { decorateMessages(); updateActiveMessage(); }));

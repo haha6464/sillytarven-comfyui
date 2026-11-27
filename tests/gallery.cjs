@@ -96,19 +96,20 @@ const node = className => result().children.find(x => x.className === className)
   // A long chat containing 100 galleries of eight images must not request 800 originals on render.
   const requests = [], targets = new Set();
   let observer;
+  const chatRoot = {};
   class LazyElement extends Element {
     set src(value) { this.imageSource = value; requests.push(value); }
     get src() { return this.imageSource; }
   }
   ctx.IntersectionObserver = class {
-    constructor(callback, options) { this.callback = callback; observer = this; assert.equal(options.rootMargin,'150px 0px'); }
+    constructor(callback, options) { this.callback = callback; observer = this; assert.equal(options.rootMargin,'600px 0px'); assert.equal(options.root,chatRoot); }
     observe(target) { targets.add(target); }
     unobserve(target) { targets.delete(target); }
   };
   const lazyMessages = Array.from({length:100}, (_,i) => ({extra:{sceneDrawImages:Array.from({length:8},(_,j)=>({url:`/original-${i}-${j}.png`,prompt:'scene'})),sceneDrawImageIndex:0}}));
   const lazyElements = lazyMessages.map(()=>new Element('div'));
   ctx.chat = lazyMessages;
-  ctx.document.createElement = tag => new LazyElement(tag);
+  ctx.document.createElement = tag => { const element = new LazyElement(tag); element.closest = () => chatRoot; return element; };
   ctx.document.querySelector = selector => lazyElements[Number(selector.match(/mesid="(\d+)"/)[1])];
   for(let i=0;i<100;i++)ctx.renderImage(i);
   assert.equal(requests.length,0,'Rendering offscreen galleries sets no original image URLs');
@@ -146,7 +147,7 @@ const node = className => result().children.find(x => x.className === className)
   cloningGallery.children[cloningGallery.children.indexOf(originalImage)] = clonedImage;
   originalImage.isConnected = false;
   ctx.deferGalleryImages(cloningGallery,lazyMessages[51],clonedImage,clonedImage.src);
-  assert(targets.has(cloningGallery),'Replacing the img re-arms observation even though its gallery was already loading');
+  assert(!targets.has(cloningGallery),'An already cached replacement bypasses observation');
   const requestsBeforeCache = requests.length;
   observer.callback([{target:cloningGallery,isIntersecting:true}]);
   assert.equal(clonedImage.hidden,false,'Cached cloned images are revealed without waiting for an event that already fired');

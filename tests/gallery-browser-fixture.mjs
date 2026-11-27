@@ -25,16 +25,19 @@ http.createServer((req,res)=>{
     const imageSizeForRatio=()=>({width:600,height:450}); const saveChatConditional=async()=>{}; const headers=()=>({});const notify=()=>{};
     ${gallery}
     ${decoration}
+    const metrics={decorations:0};
+    const decorateOriginal=decorateMessage;
+    decorateMessage=mes=>{metrics.decorations++;return decorateOriginal(mes);};
     const container=document.querySelector('#chat');
     for(let i=0;i<100;i++){const mes=document.createElement('div');mes.className='mes';mes.setAttribute('mesid',i);const text=document.createElement('div');text.className='mes_text';text.textContent='AI message '+i;mes.append(text);container.append(mes);}
     let cloned=false;
+    observeGalleryChanges();
     new MutationObserver(()=>{
       const image=container.querySelector('.scene-draw-result-image[src]');
       if(${JSON.stringify(url.searchParams.get('case'))}==='clone'&&!cloned&&image){cloned=true;image.replaceWith(image.cloneNode(true));}
-      decorateMessages();
     }).observe(container,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});
     decorateMessages();
     document.addEventListener('click',event=>{const b=event.target.closest('[data-gallery-action]');if(b){event.preventDefault();void changeGallery(b.closest('.scene-draw-result').dataset.sceneDrawMesid,b.dataset.galleryAction,b.dataset.galleryUrl);}});
-    window.fixture={chat,scrollTo:id=>container.querySelector('.mes[mesid="'+id+'"]').scrollIntoView(),cloneFirst:()=>{const image=container.querySelector('.scene-draw-result-image[src]');image.replaceWith(image.cloneNode(true));}};
+    window.fixture={chat,metrics,scrollTo:id=>container.querySelector('.mes[mesid="'+id+'"]').scrollIntoView(),cloneFirst:()=>{const image=container.querySelector('.scene-draw-result-image[src]');image.replaceWith(image.cloneNode(true));}};
   </script>`);
 }).listen(27869,'127.0.0.1',()=>console.log('Gallery browser fixture: http://127.0.0.1:27869/?case=clone'));
