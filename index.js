@@ -704,9 +704,13 @@ let galleryImageObserver;
 let galleryImageRoot;
 const deferredGalleryImages = new Map();
 const activeGalleryLoads = new WeakMap();
-function loadGalleryImages(result, entry) {
+function clearDeferredGallery(result) {
+  const pending = deferredGalleryImages.get(result);
+  galleryImageObserver?.unobserve(pending?.target || result);
   deferredGalleryImages.delete(result);
-  galleryImageObserver?.unobserve(result);
+}
+function loadGalleryImages(result, entry) {
+  clearDeferredGallery(result);
   if (result.isConnected === false || chat[Number(result.dataset.sceneDrawMesid)] !== entry.message) return;
   const { image, url } = entry;
   activeGalleryLoads.get(result)?.cleanup?.();
@@ -742,7 +746,7 @@ function deferGalleryImages(result, message, image, url) {
       result.style.aspectRatio = image.naturalWidth && image.naturalHeight ? image.naturalWidth + '/' + image.naturalHeight : size ? size.width + '/' + size.height : '1/1';
     }
   }
-  const entry = { message, image, url };
+  const entry = { message, image, url, target: result.closest?.('.mes[mesid]') || result };
   if (typeof IntersectionObserver === 'undefined' || (image.getAttribute('src') === url && image.complete && image.naturalWidth > 0)) { loadGalleryImages(result, entry); return; }
   deferredGalleryImages.set(result, entry);
   // The chat clips its contents. A viewport margin cannot extend that inner clip.
@@ -752,14 +756,15 @@ function deferGalleryImages(result, message, image, url) {
     galleryImageRoot = root;
     galleryImageObserver = new IntersectionObserver(entries => {
       for (const item of entries) {
-        const pending = deferredGalleryImages.get(item.target);
+        const result = item.target.matches?.('.mes[mesid]') ? item.target.querySelector('.scene-draw-result') : item.target;
+        const pending = deferredGalleryImages.get(result);
         if (!pending) continue;
-        if (item.target.isConnected === false) { galleryImageObserver.unobserve(item.target); deferredGalleryImages.delete(item.target); }
-        else if (item.isIntersecting) loadGalleryImages(item.target, pending);
+        if (item.target.isConnected === false) clearDeferredGallery(result);
+        else if (item.isIntersecting) loadGalleryImages(result, pending);
       }
     }, { root, rootMargin: '600px 0px', threshold: 0 });
-    for (const target of deferredGalleryImages.keys()) galleryImageObserver.observe(target);
-  } else galleryImageObserver.observe(result);
+    for (const pending of deferredGalleryImages.values()) galleryImageObserver.observe(pending.target);
+  } else galleryImageObserver.observe(entry.target);
 }
 function appendGalleryImage(message, url, prompt) {
   const images = [...galleryImages(message), { url, prompt }];
@@ -831,7 +836,7 @@ function renderImage(mesId, imageUrl, prompt, messageElement) {
   const mes = messageElement || document.querySelector('.mes[mesid="' + CSS.escape(String(mesId)) + '"]');
   if (!mes) return;
   const previous = mes.querySelector(".scene-draw-result");
-  if (previous) { galleryImageObserver?.unobserve(previous); deferredGalleryImages.delete(previous); previous.remove(); }
+  if (previous) { clearDeferredGallery(previous); previous.remove(); }
   const message = chat[Number(mesId)];
   const images = galleryImages(message);
   if (!images.length) return;
@@ -992,9 +997,18 @@ function decorateMessage(mes) {
 }
 function decorateMessages() {
   for (const result of deferredGalleryImages.keys()) if (result.isConnected === false) {
-    galleryImageObserver?.unobserve(result); deferredGalleryImages.delete(result);
+    clearDeferredGallery(result);
   }
-  document.querySelectorAll(".mes[mesid]").forEach(decorateMessage);
+  const messages = document.querySelectorAll(".mes[mesid]");
+  messages.forEach(decorateMessage);
+  // Warm one recent image on entry, including when the latest reply has no gallery.
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const result = messages[i].querySelector('.scene-draw-result');
+    if (!result) continue;
+    const pending = deferredGalleryImages.get(result);
+    if (pending) loadGalleryImages(result, pending);
+    break;
+  }
 }
 function observeGalleryChanges() {
   const pending = new Set();
@@ -1014,7 +1028,7 @@ function observeGalleryChanges() {
     frame = requestAnimationFrame(() => {
       frame = undefined;
       for (const result of deferredGalleryImages.keys()) if (!result.isConnected) {
-        galleryImageObserver?.unobserve(result); deferredGalleryImages.delete(result);
+        clearDeferredGallery(result);
       }
       const messages = [...pending];
       pending.clear();
@@ -1511,7 +1525,7 @@ function addSettings() {
   (document.querySelector("#extensions_settings") || document.querySelector("#extensions_settings2") || document.body).append(panel);
 }
 function start() {
-  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.7.5" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
+  settings(); recoverStaleGenerationLocks(); debug("插件初始化", { version: "3.7.6" }); bindGenerationClickHandler(); bindSidebarTracking(); ensureSidebar(); addSettings(); decorateMessages();
   setTimeout(updateActiveMessage);
   observeGalleryChanges();
   eventSource.on(event_types.CHAT_LOADED, recoverAfterChatLoad);

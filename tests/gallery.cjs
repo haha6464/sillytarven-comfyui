@@ -109,7 +109,7 @@ const node = className => result().children.find(x => x.className === className)
   const lazyMessages = Array.from({length:100}, (_,i) => ({extra:{sceneDrawImages:Array.from({length:8},(_,j)=>({url:`/original-${i}-${j}.png`,prompt:'scene'})),sceneDrawImageIndex:0}}));
   const lazyElements = lazyMessages.map(()=>new Element('div'));
   ctx.chat = lazyMessages;
-  ctx.document.createElement = tag => { const element = new LazyElement(tag); element.closest = () => chatRoot; return element; };
+  ctx.document.createElement = tag => { const element = new LazyElement(tag); element.closest = selector => selector === '#chat' ? chatRoot : null; return element; };
   ctx.document.querySelector = selector => lazyElements[Number(selector.match(/mesid="(\d+)"/)[1])];
   for(let i=0;i<100;i++)ctx.renderImage(i);
   assert.equal(requests.length,0,'Rendering offscreen galleries sets no original image URLs');
@@ -154,6 +154,33 @@ const node = className => result().children.find(x => x.className === className)
   assert.equal(requests.length,requestsBeforeCache,'Cached restoration does not reassign src or refetch');
   staleLoad();
   assert.equal(clonedImage.hidden,false,'Stale callbacks cannot change the replacement image state');
+  // Reading the start of a long reply must start its image before the image itself is visible.
+  const readingMessage = new Element('div');
+  readingMessage.matches = selector => selector === '.mes[mesid]';
+  readingMessage.querySelector = selector => lazyElements[55].querySelector(selector);
+  ctx.document.createElement = tag => {
+    const element = new LazyElement(tag);
+    element.closest = selector => selector === '#chat' ? chatRoot : readingMessage;
+    return element;
+  };
+  ctx.renderImage(55);
+  assert(targets.has(readingMessage), 'Observe the AI message, including its long text, instead of only its image');
+  const beforeReading = requests.length;
+  observer.callback([{target:readingMessage,isIntersecting:true}]);
+  assert.equal(requests.length,beforeReading+1);
+  assert.equal(requests.at(-1),'/original-55-0.png');
+  // Entering a chat warms only its newest available gallery, even if a newer reply has no image.
+  const decoration = source.slice(source.indexOf('function decorateMessages('),source.indexOf('function observeGalleryChanges('));
+  ctx.decorateMessage = () => {};
+  ctx.document.querySelectorAll = () => [lazyElements[54],lazyElements[55],lazyElements[56],new Element('div')];
+  vm.runInContext(decoration,ctx);
+  const beforeEntry = requests.length;
+  ctx.decorateMessages();
+  assert.equal(requests.length,beforeEntry+1,'Chat entry cannot preload every gallery');
+  assert.equal(requests.at(-1),'/original-56-0.png','Only the latest gallery current image is warmed');
+  ctx.decorateMessages();
+  assert.equal(requests.length,beforeEntry+1,'Repeated decoration cannot restart an active warm load');
   console.log('Viewport loading: 100 galleries x 8 originals, no offscreen requests, selected-image-only loading, page flips and stale targets passed.');
+  console.log('Chat entry: latest-image warmup and loading at the start of long AI replies passed.');
   console.log('Gallery: legacy migration, append, paging, prompts/downloads, persistence, stale controls, deletion, empty gallery and save rollback passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

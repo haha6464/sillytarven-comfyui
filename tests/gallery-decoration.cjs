@@ -16,6 +16,7 @@ const ctx = vm.createContext({
   requestAnimationFrame: callback => frames.push(callback),
   deferredGalleryImages: deferred,
   galleryImageObserver: { unobserve: target => unobserved.push(target) },
+  clearDeferredGallery: target => { deferred.delete(target); unobserved.push(target); },
   decorateMessage: target => decorated.push(target),
 });
 vm.runInContext(code + '\nobserveGalleryChanges();', ctx);

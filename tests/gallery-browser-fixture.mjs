@@ -18,7 +18,7 @@ http.createServer((req,res)=>{
   }
   res.setHeader('Content-Type','text/html;charset=utf-8');
   res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gallery loading regression fixture</title><style>${css}
-    body{margin:0;background:#191919;color:#ddd;font:16px sans-serif}#chat{height:90vh;overflow:auto;padding:12px}.mes{margin-bottom:30px}.mes_text{padding:10px}
+    body{margin:0;background:#191919;color:#ddd;font:16px sans-serif}#chat{height:90vh;overflow:auto;padding:12px}.mes{margin-bottom:30px}.mes_text{padding:10px;${url.searchParams.has('long') ? 'min-height:3000px' : ''}}
   </style><div id="chat"></div><script>
     const fixtureRun=${JSON.stringify(url.searchParams.get('revision') || 'default')};
     const chat=Array.from({length:100},(_,i)=>({extra:{sceneDrawImages:Array.from({length:8},(_,j)=>({url:'/original/'+i+'-'+j+'.svg?run='+encodeURIComponent(fixtureRun),prompt:'fixture'})),sceneDrawImageIndex:0,sceneDrawAspectRatio:'4:3'}}));
